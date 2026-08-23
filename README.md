@@ -32,6 +32,14 @@
 - **数据安全**：所有名单/数字/座位数据使用 AES-GCM 加密存储，SHA-256 完整性校验，并自动维护三份冗余副本，损坏时自动恢复；
 - **权限保护**：锁定模式下修改任何配置都需要密码验证。
 
+### 项目地址与下载
+
+- GitHub 仓库：<https://github.com/SeriosKore/RandomNamePicker_AIgenerated>
+- 发布页面（Releases）：<https://github.com/SeriosKore/RandomNamePicker_AIgenerated/releases>
+- 最新版本 **v1.1.0** 新增：名单修改日志、开机自启增强、多人点名（详见 `CHANGELOG.md` 与发布说明）；
+- 历史版本：V0.4.1.2（exe 版 / jar 版）见 Releases 页面；
+- 下载后只需将主程序（JAR/EXE）与名单文件放在**同一目录**运行即可，`data/`、`log/`、`modification_log.txt` 等文件首次运行时自动生成，无需其他辅助文件。
+
 ---
 
 ## 2. 功能特性

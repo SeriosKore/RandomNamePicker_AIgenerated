@@ -42,14 +42,7 @@
 - `data/`、`log/`、`modification_log.txt` 等文件首次运行自动生成，无需其他辅助文件；
 - 初始默认密码见 README「7.2 锁定机制」一节，建议首次运行后立即修改。
 
-### 📎 附件
+### 📎 附件校验和（SHA-256）
 
-- `RandomNamePicker.jar` — 主程序
-- `示例名单.txt` — 示例名单（可选）
-
-SHA-256 校验和（发布前用以下命令生成并补充到此处）：
-
-```
-certutil -hashfile RandomNamePicker.jar SHA256
-certutil -hashfile 示例名单.txt SHA256
-```
+- `示例名单.txt`：`931a72713bf7d1db128c1d24eb8036ab0200bacf7c00bb414943d5b8c5b456ab`
+- `RandomNamePicker.jar`：构建后补充（用 `certutil -hashfile RandomNamePicker.jar SHA256` 生成）
