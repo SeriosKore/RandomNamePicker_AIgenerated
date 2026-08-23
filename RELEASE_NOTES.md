@@ -45,4 +45,4 @@
 ### 📎 附件校验和（SHA-256）
 
 - `示例名单.txt`：`931a72713bf7d1db128c1d24eb8036ab0200bacf7c00bb414943d5b8c5b456ab`
-- `RandomNamePicker.jar`：构建后补充（用 `certutil -hashfile RandomNamePicker.jar SHA256` 生成）
+- `RandomNamePicker.jar`：`0784364b71ad4abac8c21381105be50606b4c597c2b77397c7d600c43219b335`
