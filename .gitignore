@@ -4,6 +4,7 @@ manifest.txt
 RandomNamePicker.iml
 RandomNamePicker.jar
 RandomNamePicker.xml
+release/
 log/
 data/
 #====java====

@@ -31,5 +31,5 @@ if errorlevel 1 (
 )
 
 echo Build successful!
-echo JAR file: %cd%\RandomNamePicker_new.jar
+echo JAR file: %cd%\RandomNamePicker.jar
 pause

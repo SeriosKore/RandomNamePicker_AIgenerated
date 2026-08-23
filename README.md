@@ -245,12 +245,12 @@ RandomNamePicker/
 │   ├── EncryptionUtil.java       # 加密与哈希工具
 │   └── PasswordManager.java      # 密码与锁定状态管理
 ├── plugins/                      # 辅助脚本
-│   ├── build.bat                 # 编译打包脚本（见第 8 节说明）
 │   ├── package.bat               # 一键编译打包并生成 release 目录（推荐）
 │   ├── selfcheck.bat             # 核心逻辑自检脚本（在临时目录运行）
 │   ├── selftest/SelfCheck.java   # 自检类（名单日志/去重抽取/配置项）
 │   ├── Creator.bat               # 注册开机自启动（注册表）
 │   └── LogClearer.bat            # 注销开机自启动（注册表）
+├── build.bat                     # 编译打包脚本（位于根目录，双击即可运行）
 ├── data/                         # 运行时生成：配置与加密数据
 │   ├── config.properties         # 全局配置
 │   ├── schemes/                  # 各方案加密数据（主副本）
@@ -384,7 +384,7 @@ java -jar RandomNamePicker.jar
 
 ### 8.4 使用 build.bat
 
-`plugins/build.bat` 完成了同样的编译打包流程。**注意**：脚本内 `cd /d %~dp0` 会切换到脚本所在目录，请将其**复制到项目根目录**（与 `src/` 同级）后再运行，或直接使用 8.1 的命令。
+项目根目录的 `build.bat` 完成同样的编译打包流程。脚本内 `cd /d %~dp0` 会自动切换到脚本所在目录，因此**双击即可运行**（需已配置 JDK 的 PATH 环境变量）。
 
 ### 8.5 打包为 EXE（可选）
 
@@ -431,7 +431,7 @@ java -jar RandomNamePicker.jar
 
 ## 11. 已知问题与改进方向
 
-1. **build.bat 路径问题**：脚本切换到自身目录后引用 `src\` 会失败，需复制到项目根目录运行（见 8.2）；
+1. ~~**build.bat 路径问题**~~（已修复）：`build.bat` 现已移至项目根目录，脚本内 `cd /d %~dp0` 自动定位，双击即可运行；
 2. **明文记忆风险**：密钥由“固定盐 + 方案名”派生，方案名公开可见，属于轻量级防窥探设计，不适合高安全等级场景（可改进为随机生成密钥并用主密钥加密保存）；
 3. **锁定状态不持久化**：程序重启后始终回到锁定状态（运行期内存变量 `isUnlocked`），如需持久锁定策略可写入配置文件；
 4. **冗余代码**：`EncryptionUtil` 中的 RSA 加解密方法与 `ChangePasswordDialog` 未被主流程使用（设置窗口改密走 `OldPasswordDialog` + `NewPasswordDialog` 流程），可清理；
