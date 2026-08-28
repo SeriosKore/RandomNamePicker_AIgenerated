@@ -58,4 +58,4 @@
 
 - `RandomNamePicker-v1.1.0-windows-x64.zip`：`aa24b7f13cb8d651241648566e2034957adcdab478a32afb6efa75eca7574612`
 - `RandomNamePicker.jar`：`f664088aa444fbb3b8d2dc92ade746ed8b2fcfd8765c1d48ae26d1aa19778bac`
-- `示例名单.txt`：`931a72713bf7d1db128c1d24eb8036ab0200bacf7c00bb414943d5b8c5b456ab`
+- 示例名单（附件名显示为 `default.txt`，内容即 `示例名单.txt`，可下载后重命名）：`931a72713bf7d1db128c1d24eb8036ab0200bacf7c00bb414943d5b8c5b456ab`
