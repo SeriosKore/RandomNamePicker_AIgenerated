@@ -138,6 +138,20 @@ public class FloatingBall extends JWindow {
         JMenuItem settingsItem = new JMenuItem("悬浮球设置");
         settingsItem.addActionListener(e -> mainApp.showSettingsWindow());
         popupMenu.add(settingsItem);
+
+        // 插件扩展点：悬浮球右键菜单注入插件注册的菜单项
+        if (mainApp.getPluginManager() != null) {
+            java.util.List<PluginManager.MenuItemSpec> pluginItems =
+                    mainApp.getPluginManager().getFloatingBallMenuItemSpecs();
+            if (!pluginItems.isEmpty()) {
+                popupMenu.addSeparator();
+                for (PluginManager.MenuItemSpec spec : pluginItems) {
+                    JMenuItem item = new JMenuItem(spec.text);
+                    item.addActionListener(e -> spec.action.run());
+                    popupMenu.add(item);
+                }
+            }
+        }
         
         popupMenu.addSeparator();
         

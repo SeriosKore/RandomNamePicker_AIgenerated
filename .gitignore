@@ -37,3 +37,8 @@ Thumbs.db
 
 #===internal task file===
 prompt.txt
+
+#===plugin example build artifacts===
+examples/**/classes/
+examples/**/manifest.txt
+examples/**/ExamplePlugin.jar

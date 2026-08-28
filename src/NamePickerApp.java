@@ -27,6 +27,10 @@ public class NamePickerApp extends JFrame {
     private FloatingBall floatingBall;
     private boolean isFloatingBallVisible = false;
     private ModeHandler currentModeHandler;
+    private PluginManager pluginManager;
+    private JMenuBar menuBar;
+    private JMenu pluginMenu;
+    private JPanel pluginButtonBar;
 
 
     public NamePickerApp() {
@@ -40,6 +44,10 @@ public class NamePickerApp extends JFrame {
         updateModeSpecificButtons();
         restoreLastScheme();
         setupWindowCloseBehavior();
+        // 插件生态：加载 extensions/ 目录下的插件并刷新扩展 UI
+        pluginManager = new PluginManager(this);
+        pluginManager.loadPlugins();
+        refreshPluginUI();
     }
 
     private void restoreLastScheme() {
@@ -103,6 +111,13 @@ public class NamePickerApp extends JFrame {
     private void setupLayout() {
         setLayout(new BorderLayout());
 
+        // 菜单栏（含“插件”菜单，插件扩展点）
+        menuBar = new JMenuBar();
+        pluginMenu = new JMenu("插件");
+        pluginMenu.setEnabled(false);
+        menuBar.add(pluginMenu);
+        setJMenuBar(menuBar);
+
         // 顶部方案选择
         JPanel topPanel = new JPanel(new FlowLayout());
         topPanel.add(new JLabel("预设方案:"));
@@ -125,7 +140,48 @@ public class NamePickerApp extends JFrame {
         buttonPanel.add(new JPanel());
         buttonPanel.add(modeButton2);
 
-        add(buttonPanel, BorderLayout.SOUTH);
+        // 底部区域：原有按钮面板 + 插件按钮区（插件扩展点/UI 篡改注入区）
+        pluginButtonBar = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 2));
+        pluginButtonBar.setVisible(false);
+        JPanel southPanel = new JPanel(new BorderLayout(0, 5));
+        southPanel.add(buttonPanel, BorderLayout.CENTER);
+        southPanel.add(pluginButtonBar, BorderLayout.SOUTH);
+        add(southPanel, BorderLayout.SOUTH);
+    }
+
+    /**
+     * 依据插件注册结果刷新插件菜单、插件按钮区与注入组件。
+     */
+    private void refreshPluginUI() {
+        if (pluginManager == null) {
+            return;
+        }
+        // 插件菜单
+        pluginMenu.removeAll();
+        for (PluginManager.MenuItemSpec spec : pluginManager.getMainMenuItemSpecs()) {
+            JMenuItem item = new JMenuItem(spec.text);
+            item.addActionListener(e -> spec.action.run());
+            pluginMenu.add(item);
+        }
+        for (JMenu menu : pluginManager.getExtraMenus()) {
+            pluginMenu.add(menu);
+        }
+        pluginMenu.setEnabled(pluginMenu.getItemCount() > 0);
+
+        // 插件按钮区
+        pluginButtonBar.removeAll();
+        for (PluginManager.MenuItemSpec spec : pluginManager.getMainButtonSpecs()) {
+            JButton button = new JButton(spec.text);
+            button.addActionListener(e -> spec.action.run());
+            pluginButtonBar.add(button);
+        }
+        for (JComponent component : pluginManager.getMainComponents()) {
+            pluginButtonBar.add(component);
+        }
+        pluginButtonBar.setVisible(pluginButtonBar.getComponentCount() > 0);
+
+        revalidate();
+        repaint();
     }
 
     private void setupEventHandlers() {
@@ -496,6 +552,20 @@ public class NamePickerApp extends JFrame {
     
     public void toggleFloatingBall() {
         showFloatingBall();
+    }
+
+    /**
+     * 获取插件管理器（供托盘、悬浮球、设置窗口等查询插件扩展点）。
+     */
+    public PluginManager getPluginManager() {
+        return pluginManager;
+    }
+
+    /**
+     * 修改主窗口中央显示文本（插件 UI 篡改接口）。
+     */
+    public void setDisplayLabelText(String text) {
+        displayLabel.setText(text);
     }
 
 }

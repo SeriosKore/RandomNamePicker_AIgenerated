@@ -85,6 +85,20 @@ public class Main {
             }
         });
         popup.add(exitItem);
+
+        // 插件扩展点：托盘菜单注入插件注册的菜单项
+        if (mainApp != null && mainApp.getPluginManager() != null) {
+            java.util.List<PluginManager.MenuItemSpec> pluginItems =
+                    mainApp.getPluginManager().getTrayMenuItemSpecs();
+            if (!pluginItems.isEmpty()) {
+                popup.addSeparator();
+                for (PluginManager.MenuItemSpec spec : pluginItems) {
+                    MenuItem item = new MenuItem(spec.text);
+                    item.addActionListener(e -> spec.action.run());
+                    popup.add(item);
+                }
+            }
+        }
         
         trayIcon = new TrayIcon(icon.getImage(), "多功能随机抽取器", popup);
         trayIcon.setImageAutoSize(true);
@@ -133,6 +147,14 @@ public class Main {
     }
     
     public static void cleanupAndExit() {
+        // 先卸载全部插件，再清理托盘并退出
+        if (mainApp != null && mainApp.getPluginManager() != null) {
+            try {
+                mainApp.getPluginManager().unloadAll();
+            } catch (Exception e) {
+                // 忽略插件卸载异常
+            }
+        }
         if (systemTray != null && trayIcon != null) {
             systemTray.remove(trayIcon);
         }

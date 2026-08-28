@@ -10,8 +10,10 @@ public class SettingsWindow extends JDialog {
     private JButton viewModificationLogButton;
     private JSlider radiusSlider;
     private JSlider opacitySlider;
+    private JSlider multiOpacitySlider;
     private JLabel radiusValueLabel;
     private JLabel opacityValueLabel;
+    private JLabel multiOpacityValueLabel;
     private JButton lockButton;
     private JButton changePasswordButton;
     private JTextField pickCountField;
@@ -77,6 +79,15 @@ public class SettingsWindow extends JDialog {
         opacityValueLabel = new JLabel("200 (半透明)");
         opacityValueLabel.setFont(new Font("微软雅黑", Font.PLAIN, 12));
 
+        multiOpacitySlider = new JSlider(SwingConstants.HORIZONTAL, 50, 255, 200);
+        multiOpacitySlider.setMajorTickSpacing(50);
+        multiOpacitySlider.setMinorTickSpacing(25);
+        multiOpacitySlider.setPaintTicks(true);
+        multiOpacitySlider.setPaintLabels(true);
+        multiOpacitySlider.setFont(new Font("微软雅黑", Font.PLAIN, 11));
+        multiOpacityValueLabel = new JLabel("200 (半透明)");
+        multiOpacityValueLabel.setFont(new Font("微软雅黑", Font.PLAIN, 12));
+
         lockButton = new JButton("锁定/解锁配置");
         lockButton.setFont(new Font("微软雅黑", Font.PLAIN, 13));
         lockButton.addActionListener(e -> toggleLock());
@@ -128,6 +139,24 @@ public class SettingsWindow extends JDialog {
         securityPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 80));
         mainPanel.add(securityPanel);
 
+        // 插件扩展点：追加插件注册的设置面板
+        if (mainApp.getPluginManager() != null) {
+            for (PluginManager.SettingsPanelSpec spec : mainApp.getPluginManager().getSettingsPanelSpecs()) {
+                mainPanel.add(Box.createRigidArea(new Dimension(0, 10)));
+                JPanel pluginPanel = new JPanel(new BorderLayout());
+                pluginPanel.setBorder(new TitledBorder(
+                        BorderFactory.createLineBorder(Color.GRAY, 1),
+                        spec.title,
+                        TitledBorder.LEFT,
+                        TitledBorder.TOP,
+                        new Font("微软雅黑", Font.BOLD, 13)
+                ));
+                pluginPanel.add(spec.panel, BorderLayout.CENTER);
+                pluginPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
+                mainPanel.add(pluginPanel);
+            }
+        }
+
         JScrollPane scrollPane = new JScrollPane(mainPanel);
         scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
         scrollPane.setBorder(null);
@@ -150,6 +179,20 @@ public class SettingsWindow extends JDialog {
                 opacityText = opacity + " (低透明)";
             }
             opacityValueLabel.setText(opacityText);
+            saveFloatingBallSettings();
+        });
+
+        multiOpacitySlider.addChangeListener(e -> {
+            int opacity = multiOpacitySlider.getValue();
+            String opacityText;
+            if (opacity < 100) {
+                opacityText = opacity + " (高透明)";
+            } else if (opacity < 180) {
+                opacityText = opacity + " (半透明)";
+            } else {
+                opacityText = opacity + " (低透明)";
+            }
+            multiOpacityValueLabel.setText(opacityText);
             saveFloatingBallSettings();
         });
     }
@@ -220,6 +263,19 @@ public class SettingsWindow extends JDialog {
         gbc.gridx = 2;
         gbc.weightx = 0;
         panel.add(opacityValueLabel, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 2;
+        gbc.weightx = 0;
+        panel.add(new JLabel("多球透明度："), gbc);
+
+        gbc.gridx = 1;
+        gbc.weightx = 1.0;
+        panel.add(multiOpacitySlider, gbc);
+
+        gbc.gridx = 2;
+        gbc.weightx = 0;
+        panel.add(multiOpacityValueLabel, gbc);
 
         return panel;
     }
@@ -306,6 +362,18 @@ public class SettingsWindow extends JDialog {
             opacityText = opacity + " (低透明)";
         }
         opacityValueLabel.setText(opacityText);
+
+        int multiOpacity = ConfigManager.getMultiBallOpacity();
+        multiOpacitySlider.setValue(multiOpacity);
+        String multiOpacityText;
+        if (multiOpacity < 100) {
+            multiOpacityText = multiOpacity + " (高透明)";
+        } else if (multiOpacity < 180) {
+            multiOpacityText = multiOpacity + " (半透明)";
+        } else {
+            multiOpacityText = multiOpacity + " (低透明)";
+        }
+        multiOpacityValueLabel.setText(multiOpacityText);
 
         // 单次抽取数量：若名单人数变化后设置值超限，自动修正为当前最大值并提示
         int pickCount = ConfigManager.getPickCount();
@@ -489,9 +557,11 @@ public class SettingsWindow extends JDialog {
     private void saveFloatingBallSettings() {
         int radius = radiusSlider.getValue();
         int opacity = opacitySlider.getValue();
+        int multiOpacity = multiOpacitySlider.getValue();
 
         ConfigManager.setFloatingBallRadius(radius);
         ConfigManager.setFloatingBallOpacity(opacity);
+        ConfigManager.setMultiBallOpacity(multiOpacity);
     }
 
     private void exportLog() {
