@@ -42,3 +42,5 @@ prompt.txt
 examples/**/classes/
 examples/**/manifest.txt
 examples/**/ExamplePlugin.jar
+#===runtime logs===
+modification_log.txt
