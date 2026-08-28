@@ -253,6 +253,18 @@ public class SettingsWindow extends JDialog {
                 new Font("微软雅黑", Font.BOLD, 13)
         ));
 
+        if (!isMultiBallPluginActive()) {
+            // 插件未安装或已禁用：隐藏“单次抽取数量”，置灰提示
+            JLabel hintLabel = new JLabel("未安装或未启用“多悬浮球插件”，单次抽取数量设置不可用。");
+            hintLabel.setFont(new Font("微软雅黑", Font.PLAIN, 12));
+            hintLabel.setForeground(Color.GRAY);
+            JPanel hintPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+            hintPanel.add(hintLabel);
+            hintPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
+            panel.add(hintPanel);
+            return panel;
+        }
+
         JPanel inputPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         inputPanel.add(new JLabel("单次抽取数量："));
         inputPanel.add(pickCountField);
@@ -261,7 +273,7 @@ public class SettingsWindow extends JDialog {
         inputPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
         panel.add(inputPanel);
 
-        JLabel tipLabel = new JLabel("提示：仅对名字列表模式生效；数量为 1 时悬浮球保持单球效果，大于 1 时以多球动画展示全部中奖者。");
+        JLabel tipLabel = new JLabel("提示：仅对名字列表模式生效；悬浮球多球动画由“多悬浮球插件”提供。");
         tipLabel.setFont(new Font("微软雅黑", Font.PLAIN, 11));
         tipLabel.setForeground(Color.GRAY);
         JPanel tipPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
@@ -325,27 +337,29 @@ public class SettingsWindow extends JDialog {
         }
         opacityValueLabel.setText(opacityText);
 
-        // 单次抽取数量：若名单人数变化后设置值超限，自动修正为当前最大值并提示
-        int pickCount = ConfigManager.getPickCount();
-        if (pickCount < 1) {
-            pickCount = 1;
-            ConfigManager.setPickCount(pickCount);
+        // 单次抽取数量：仅在多球插件启用时加载/修正（未启用时设置项隐藏）
+        if (isMultiBallPluginActive()) {
+            int pickCount = ConfigManager.getPickCount();
+            if (pickCount < 1) {
+                pickCount = 1;
+                ConfigManager.setPickCount(pickCount);
+            }
+            int maxPickCount = getCurrentMaxPickCount();
+            if (pickCount > maxPickCount) {
+                pickCount = maxPickCount;
+                ConfigManager.setPickCount(pickCount);
+                // 延迟到设置窗口显示后再提示，避免在构造函数中弹出模态框
+                final int corrected = pickCount;
+                final int totalAtTime = getCurrentNameListTotal();
+                SwingUtilities.invokeLater(() ->
+                        JOptionPane.showMessageDialog(SettingsWindow.this,
+                                "当前名单总人数为 " + totalAtTime + "，单次抽取数量已自动修正为 " + corrected + "。",
+                                "提示",
+                                JOptionPane.INFORMATION_MESSAGE));
+            }
+            pickCountField.setText(String.valueOf(pickCount));
+            updatePickCountHint();
         }
-        int maxPickCount = getCurrentMaxPickCount();
-        if (pickCount > maxPickCount) {
-            pickCount = maxPickCount;
-            ConfigManager.setPickCount(pickCount);
-            // 延迟到设置窗口显示后再提示，避免在构造函数中弹出模态框
-            final int corrected = pickCount;
-            final int totalAtTime = getCurrentNameListTotal();
-            SwingUtilities.invokeLater(() ->
-                    JOptionPane.showMessageDialog(SettingsWindow.this,
-                            "当前名单总人数为 " + totalAtTime + "，单次抽取数量已自动修正为 " + corrected + "。",
-                            "提示",
-                            JOptionPane.INFORMATION_MESSAGE));
-        }
-        pickCountField.setText(String.valueOf(pickCount));
-        updatePickCountHint();
 
         updateLockButtonText();
     }
@@ -355,6 +369,14 @@ public class SettingsWindow extends JDialog {
      */
     private int getCurrentNameListTotal() {
         return mainApp.getCurrentNameListSize();
+    }
+
+    /**
+     * 多球抽取插件是否已安装且启用（决定是否显示“单次抽取数量”等设置）。
+     */
+    private boolean isMultiBallPluginActive() {
+        PluginManager pluginManager = mainApp.getPluginManager();
+        return pluginManager != null && pluginManager.isPluginEnabled(PluginManager.PLUGIN_ID_MULTI_BALL);
     }
 
     /**
@@ -372,6 +394,13 @@ public class SettingsWindow extends JDialog {
      * 应用单次抽取数量设置：非数字、小于 1、大于名单总人数均拒绝并提示。
      */
     private void applyPickCount() {
+        if (!isMultiBallPluginActive()) {
+            JOptionPane.showMessageDialog(this,
+                    "未安装或未启用“多悬浮球插件”，该设置不可用。",
+                    "提示",
+                    JOptionPane.WARNING_MESSAGE);
+            return;
+        }
         String text = pickCountField.getText().trim();
         int value;
         try {

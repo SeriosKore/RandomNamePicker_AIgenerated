@@ -30,7 +30,7 @@ jar xf ..\lib\jna-platform-5.14.0.jar
 popd
 
 echo [2/4] 编译插件...
-javac -encoding UTF-8 -cp ..\..\RandomNamePicker.jar;lib\jna-5.14.0.jar;lib\jna-platform-5.14.0.jar -d classes PenPlugin.java PenOverlayWindow.java PenNative.java PenStroke.java PenStrokeRenderer.java PenToolbar.java
+javac -encoding UTF-8 -cp ..\..\RandomNamePicker.jar;lib\jna-5.14.0.jar;lib\jna-platform-5.14.0.jar -d classes PenPlugin.java PenDock.java PenOverlayWindow.java PenNative.java PenStroke.java PenStrokeRenderer.java
 if errorlevel 1 (
     echo 插件编译失败！
     pause

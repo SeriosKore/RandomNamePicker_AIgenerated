@@ -152,12 +152,16 @@ public class NamePickerApp extends JFrame {
     /**
      * 依据插件注册结果刷新插件菜单、插件按钮区与注入组件。
      */
-    private void refreshPluginUI() {
+    public void refreshPluginUI() {
         if (pluginManager == null) {
             return;
         }
-        // 插件菜单
+        // 插件菜单：内置“插件管理”入口 + 各插件注册的菜单项
         pluginMenu.removeAll();
+        JMenuItem manageItem = new JMenuItem("插件管理");
+        manageItem.addActionListener(e -> showPluginManagerDialog());
+        pluginMenu.add(manageItem);
+        pluginMenu.addSeparator();
         for (PluginManager.MenuItemSpec spec : pluginManager.getMainMenuItemSpecs()) {
             JMenuItem item = new JMenuItem(spec.text);
             item.addActionListener(e -> spec.action.run());
@@ -505,6 +509,10 @@ public class NamePickerApp extends JFrame {
         if (!"名字列表模式".equals(getCurrentMode())) {
             return 1;
         }
+        // 多人点名依赖“多悬浮球插件”：未安装或已禁用时按单人处理（设置项也会隐藏）
+        if (pluginManager == null || !pluginManager.isPluginEnabled(PluginManager.PLUGIN_ID_MULTI_BALL)) {
+            return 1;
+        }
         int count = ConfigManager.getPickCount();
         if (count < 1) {
             count = 1;
@@ -566,6 +574,18 @@ public class NamePickerApp extends JFrame {
      */
     public FloatingBall getFloatingBall() {
         return floatingBall;
+    }
+
+    /**
+     * 打开插件管理界面。
+     */
+    public void showPluginManagerDialog() {
+        if (pluginManager == null) {
+            return;
+        }
+        PluginManagerDialog dialog = new PluginManagerDialog(this, pluginManager);
+        dialog.setVisible(true);
+        refreshPluginUI();
     }
 
     /**

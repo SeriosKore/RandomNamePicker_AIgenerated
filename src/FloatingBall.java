@@ -151,7 +151,13 @@ public class FloatingBall extends JWindow {
                 }
             }
         }
-        
+
+        // 内置入口：插件管理
+        popupMenu.addSeparator();
+        JMenuItem pluginManagerItem = new JMenuItem("插件管理");
+        pluginManagerItem.addActionListener(e -> mainApp.showPluginManagerDialog());
+        popupMenu.add(pluginManagerItem);
+
         popupMenu.addSeparator();
         
         JMenuItem closeItem = new JMenuItem("关闭");

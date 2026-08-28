@@ -2,7 +2,6 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -10,7 +9,7 @@ import java.util.List;
  * 多人点名结果动画窗口（透明、置顶），属于“多悬浮球插件”。
  * 中心绘制主球体，每位中奖者以小球形式围绕主球弹出、旋转、浮动；
  * 中奖人数较多时自动排列为多个同心圆环，保证小球互不重叠；
- * 小球运动带有逐渐消失的尾迹；点击窗口任意位置或超时后自动关闭。
+ * 子球无任何尾迹/残影（干净渲染），点击窗口任意位置或超时后自动关闭。
  */
 public class MultiPickBallWindow extends JWindow {
     private List<String> winners;
@@ -24,7 +23,6 @@ public class MultiPickBallWindow extends JWindow {
     private static final long POP_DURATION_MS = 900;      // 小球弹出动画时长（毫秒）
     private static final long AUTO_CLOSE_MS = 15000;      // 超时自动关闭（毫秒）
     private static final int BALL_GAP = 8;                // 同环相邻小球之间的最小间隙
-    private static final double TRAIL_DECAY = 0.86;       // 尾迹衰减系数（越小消失越快）
     private static final Color[] WINNER_COLORS = {
             new Color(255, 99, 71), new Color(60, 179, 113), new Color(255, 165, 0),
             new Color(147, 112, 219), new Color(30, 144, 255), new Color(255, 105, 180),
@@ -151,37 +149,18 @@ public class MultiPickBallWindow extends JWindow {
     }
 
     /**
-     * 动画绘制面板：主球体 + 围绕旋转的中奖者小球 + 渐隐尾迹。
+     * 动画绘制面板：主球体 + 围绕旋转的中奖者小球（干净渲染，无尾迹）。
      */
     private class AnimationPanel extends JPanel {
-        private BufferedImage trailBuffer;
-        private BufferedImage fadeScratch;
 
         AnimationPanel() {
             setOpaque(false);
-        }
-
-        private void ensureBuffers() {
-            int w = Math.max(1, getWidth());
-            int h = Math.max(1, getHeight());
-            if (trailBuffer == null || trailBuffer.getWidth() != w || trailBuffer.getHeight() != h) {
-                trailBuffer = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
-            }
-            if (fadeScratch == null || fadeScratch.getWidth() != w || fadeScratch.getHeight() != h) {
-                fadeScratch = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
-                Graphics2D sg = fadeScratch.createGraphics();
-                sg.setColor(new Color(0, 0, 0, (int) (TRAIL_DECAY * 255)));
-                sg.fillRect(0, 0, w, h);
-                sg.dispose();
-            }
         }
 
         @Override
         protected void paintComponent(Graphics g) {
             Graphics2D g2d = (Graphics2D) g.create();
             g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-
-            ensureBuffers();
 
             int cx = getWidth() / 2;
             int cy = getHeight() / 2;
@@ -195,33 +174,14 @@ public class MultiPickBallWindow extends JWindow {
 
             int n = winners.size();
 
-            // 1) 尾迹衰减：旧内容按 TRAIL_DECAY 系数逐渐变淡，形成“渐渐消失”的效果
-            Graphics2D tg = trailBuffer.createGraphics();
-            tg.setComposite(AlphaComposite.DstIn);
-            tg.drawImage(fadeScratch, 0, 0, null);
-            tg.setComposite(AlphaComposite.SrcOver);
-            tg.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-
-            // 2) 把当前小球位置画进尾迹缓冲
-            for (int i = 0; i < n; i++) {
-                int bx = ballX(i, cx, eased, baseAngle);
-                int by = ballY(i, cy, eased, baseAngle, elapsed);
-                tg.setColor(colorOf(i));
-                tg.fillOval(bx - winnerRadius, by - winnerRadius, winnerRadius * 2, winnerRadius * 2);
-            }
-            tg.dispose();
-
-            // 3) 绘制尾迹
-            g2d.drawImage(trailBuffer, 0, 0, null);
-
-            // 4) 主球体
+            // 主球体
             g2d.setColor(new Color(70, 130, 180));
             g2d.fillOval(cx - mainRadius, cy - mainRadius, mainRadius * 2, mainRadius * 2);
             g2d.setColor(Color.WHITE);
             g2d.setFont(new Font("微软雅黑", Font.BOLD, mainRadius / 2));
             drawCenteredString(g2d, "抽", cx, cy);
 
-            // 5) 当前中奖者小球（清晰显示在尾迹之上）
+            // 中奖者小球（直接绘制，无尾迹残留）
             for (int i = 0; i < n; i++) {
                 int bx = ballX(i, cx, eased, baseAngle);
                 int by = ballY(i, cy, eased, baseAngle, elapsed);

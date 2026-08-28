@@ -16,6 +16,19 @@ public class PenNative {
     public static final int WM_POINTERUP = 0x0247;
     public static final int WM_POINTERUPDATE = 0x0245;
 
+    /** 传统鼠标消息（鼠标绘制的可靠路径）。 */
+    public static final int WM_MOUSEMOVE = 0x0200;
+    public static final int WM_LBUTTONDOWN = 0x0201;
+    public static final int WM_LBUTTONUP = 0x0202;
+    public static final int WM_RBUTTONDOWN = 0x0204;
+    public static final int WM_RBUTTONUP = 0x0205;
+
+    public static final int MK_LBUTTON = 0x0001;
+    public static final int MK_RBUTTON = 0x0002;
+
+    /** 鼠标笔画使用的固定指针 ID。 */
+    public static final int MOUSE_POINTER_ID = 0x7F00;
+
     /** 指针类型（GetPointerType 返回值）。 */
     public static final int PT_POINTER = 1;
     public static final int PT_TOUCH = 2;
@@ -131,6 +144,45 @@ public class PenNative {
 
         @Override
         public LRESULT callback(HWND hwnd, int uMsg, WPARAM wParam, LPARAM lParam) {
+            // ---- 传统鼠标消息：保证鼠标左键按下/拖动/释放可正常绘制 ----
+            if (uMsg == WM_LBUTTONDOWN || uMsg == WM_RBUTTONDOWN) {
+                try {
+                    long lp = lParam.longValue();
+                    double x = (short) (lp & 0xFFFF);
+                    double y = (short) ((lp >> 16) & 0xFFFF);
+                    bridge.onPointerDown(MOUSE_POINTER_ID, PT_MOUSE, uMsg == WM_RBUTTONDOWN, x, y);
+                } catch (Throwable t) {
+                    // 原生层异常不影响其他消息
+                }
+                return new LRESULT(0);
+            }
+            if (uMsg == WM_MOUSEMOVE) {
+                try {
+                    int keys = wParam.intValue();
+                    if ((keys & (MK_LBUTTON | MK_RBUTTON)) != 0) {
+                        long lp = lParam.longValue();
+                        double x = (short) (lp & 0xFFFF);
+                        double y = (short) ((lp >> 16) & 0xFFFF);
+                        bridge.onPointerUpdate(MOUSE_POINTER_ID, x, y);
+                    }
+                } catch (Throwable t) {
+                    // 原生层异常不影响其他消息
+                }
+                return new LRESULT(0);
+            }
+            if (uMsg == WM_LBUTTONUP || uMsg == WM_RBUTTONUP) {
+                try {
+                    long lp = lParam.longValue();
+                    double x = (short) (lp & 0xFFFF);
+                    double y = (short) ((lp >> 16) & 0xFFFF);
+                    bridge.onPointerUp(MOUSE_POINTER_ID, x, y);
+                } catch (Throwable t) {
+                    // 原生层异常不影响其他消息
+                }
+                return new LRESULT(0);
+            }
+
+            // ---- 指针消息：笔/触摸在此处理；鼠标指针消息放行，由上方传统鼠标路径处理 ----
             if (uMsg == WM_POINTERDOWN || uMsg == WM_POINTERUPDATE || uMsg == WM_POINTERUP) {
                 try {
                     int pointerId = wParam.intValue();
@@ -138,6 +190,11 @@ public class PenNative {
                     // 低 16 位 X、高 16 位 Y（有符号，屏幕坐标）
                     double x = (short) (lp & 0xFFFF);
                     double y = (short) ((lp >> 16) & 0xFFFF);
+
+                    if (typeOf(pointerId) == PT_MOUSE) {
+                        // 鼠标统一走传统鼠标消息路径，避免重复绘制
+                        return User32.INSTANCE.CallWindowProc(prevProc, hwnd, uMsg, wParam, lParam);
+                    }
 
                     if (uMsg == WM_POINTERUPDATE) {
                         if (bridge.onPointerUpdate(pointerId, x, y)) {

@@ -19,7 +19,6 @@ public class PenOverlayWindow extends JWindow implements PenNative.PenInputBridg
     private PenNative.PenWndProc wndProc;   // 强引用，防止 JNA 回调被回收
     private boolean nativeAvailable;
     private Color currentColor = Color.BLACK;
-    private PenToolbar toolbar;
 
     public PenOverlayWindow() {
         super();
@@ -58,14 +57,10 @@ public class PenOverlayWindow extends JWindow implements PenNative.PenInputBridg
         wndProc = PenNative.installWndProc(this, this);
         if (wndProc != null) {
             nativeAvailable = true;
-            LogManager.log("画笔插件：已启用原生指针输入（笔/触摸/鼠标）", "PEN_NATIVE_ON");
+            LogManager.log("画笔插件：已启用原生输入（笔/触摸/鼠标）", "PEN_NATIVE_ON");
         } else {
             installFallbackListeners();
             LogManager.log("画笔插件：原生输入不可用，降级为鼠标输入", "PEN_FALLBACK");
-        }
-
-        if (toolbar != null) {
-            toolbar.setVisible(true);
         }
     }
 
@@ -211,15 +206,8 @@ public class PenOverlayWindow extends JWindow implements PenNative.PenInputBridg
         this.currentColor = color;
     }
 
-    public void setToolbar(PenToolbar toolbar) {
-        this.toolbar = toolbar;
-    }
-
     @Override
     public void dispose() {
-        if (toolbar != null) {
-            toolbar.dispose();
-        }
         activeStrokes.clear();
         super.dispose();
     }

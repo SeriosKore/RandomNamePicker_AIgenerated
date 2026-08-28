@@ -71,6 +71,13 @@ public class ConfigManager {
             allProperties.setProperty("minimizeToTray", properties.getProperty("minimizeToTray", "true"));
             allProperties.setProperty("pickCount", properties.getProperty("pickCount", "1"));
             allProperties.setProperty("lastScheme", properties.getProperty("lastScheme", ""));
+
+            // 保留插件启用状态等动态键
+            for (String key : properties.stringPropertyNames()) {
+                if (key.startsWith("pluginEnabled.")) {
+                    allProperties.setProperty(key, properties.getProperty(key));
+                }
+            }
             
             FileOutputStream fos = new FileOutputStream(configFile);
             allProperties.store(fos, "Random Name Picker Configuration");
@@ -143,6 +150,40 @@ public class ConfigManager {
     public static void setPickCount(int count) {
         properties.setProperty("pickCount", String.valueOf(count));
         saveConfig();
+    }
+
+    /**
+     * 插件是否启用（默认启用；键名 pluginEnabled.<Plugin-Class 值>）。
+     */
+    public static boolean isPluginEnabled(String pluginId) {
+        return Boolean.parseBoolean(properties.getProperty("pluginEnabled." + pluginId, "true"));
+    }
+
+    /**
+     * 设置插件启用状态并立即持久化。
+     */
+    public static void setPluginEnabled(String pluginId, boolean enabled) {
+        properties.setProperty("pluginEnabled." + pluginId, String.valueOf(enabled));
+        savePluginFlag(pluginId, enabled);
+    }
+
+    /** 单独落盘插件开关（saveConfig 白名单不含动态键，此处直接合并写盘）。 */
+    private static void savePluginFlag(String pluginId, boolean enabled) {
+        try {
+            File configFile = new File(CONFIG_FILE_PATH);
+            Properties allProperties = new Properties();
+            if (configFile.exists()) {
+                FileInputStream fis = new FileInputStream(configFile);
+                allProperties.load(fis);
+                fis.close();
+            }
+            allProperties.setProperty("pluginEnabled." + pluginId, String.valueOf(enabled));
+            FileOutputStream fos = new FileOutputStream(configFile);
+            allProperties.store(fos, "Random Name Picker Configuration");
+            fos.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
     
     public static String getLastScheme() {
