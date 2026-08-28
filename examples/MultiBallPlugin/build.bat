@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 echo ========================================
-echo   示例插件构建脚本（ExamplePlugin）
+echo   多悬浮球插件构建脚本（MultiBallPlugin）
 echo ========================================
 
 cd /d %~dp0
@@ -16,7 +16,7 @@ if exist classes rmdir /s /q classes
 mkdir classes
 
 echo [1/3] 编译插件...
-javac -encoding UTF-8 -cp ..\..\RandomNamePicker.jar -d classes ExamplePlugin.java
+javac -encoding UTF-8 -cp ..\..\RandomNamePicker.jar -d classes MultiBallPlugin.java MultiPickBallWindow.java
 if errorlevel 1 (
     echo 插件编译失败！
     pause
@@ -24,12 +24,12 @@ if errorlevel 1 (
 )
 
 echo [2/3] 打包插件 JAR（含 Plugin-Class 清单属性）...
-echo Plugin-Class: ExamplePlugin> manifest.txt
-jar cfm ExamplePlugin.jar manifest.txt -C classes .
+echo Plugin-Class: MultiBallPlugin> manifest.txt
+jar cfm MultiBallPlugin.jar manifest.txt -C classes .
 
 echo [3/3] 复制到 extensions\ 目录...
 if not exist ..\..\extensions mkdir ..\..\extensions
-copy /y ExamplePlugin.jar ..\..\extensions\ExamplePlugin.jar >nul
+copy /y MultiBallPlugin.jar ..\..\extensions\MultiBallPlugin.jar >nul
 
 echo.
 echo 构建完成！重启程序后插件将自动加载。

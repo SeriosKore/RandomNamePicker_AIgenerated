@@ -7,7 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 多人点名结果动画窗口（透明、置顶）。
+ * 多人点名结果动画窗口（透明、置顶），属于“多悬浮球插件”。
  * 中心绘制主球体，每位中奖者以小球形式围绕主球弹出、旋转、浮动；
  * 中奖人数较多时自动排列为多个同心圆环，保证小球互不重叠；
  * 小球运动带有逐渐消失的尾迹；点击窗口任意位置或超时后自动关闭。
@@ -38,14 +38,15 @@ public class MultiPickBallWindow extends JWindow {
     private int[] ballRing;         // 每个中奖者所在环
     private double[] ballAngle;     // 每个中奖者在环内的初始角度
 
-    public MultiPickBallWindow(Window owner, Point centerOnScreen, List<String> winners, int mainRadius) {
+    public MultiPickBallWindow(Window owner, Point centerOnScreen, List<String> winners,
+                               int mainRadius, int ballOpacity) {
         super(owner);
         if (winners == null) {
             winners = new ArrayList<>();
         }
         this.winners = winners;
         this.mainRadius = Math.max(30, mainRadius);
-        this.ballOpacity = clampOpacity(ConfigManager.getMultiBallOpacity());
+        this.ballOpacity = clampOpacity(ballOpacity);
         this.startTime = System.currentTimeMillis();
 
         setBackground(new Color(0, 0, 0, 0));

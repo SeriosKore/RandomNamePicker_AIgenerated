@@ -21,6 +21,12 @@ public interface PluginContext {
     /** 在悬浮球右键菜单注册一个菜单项。 */
     void registerFloatingBallMenuItem(String text, Runnable action);
 
+    /**
+     * 注册悬浮球名字抽取拦截器：返回 true 表示插件接管该次抽取
+     * （例如“多悬浮球插件”在抽取数量大于 1 时接管并展示多球动画）。
+     */
+    void registerFloatingBallPickHandler(FloatingBallPickHandler handler);
+
     /** 在设置窗口注册一个插件设置面板（以标题分组展示）。 */
     void registerSettingsPanel(String title, JComponent panel);
 
@@ -51,4 +57,7 @@ public interface PluginContext {
 
     /** 获取当前抽取模式（名字列表模式/数字模式/座位模式）。 */
     String getCurrentMode();
+
+    /** 获取单次抽取数量设置（多人点名，最小为 1）。 */
+    int getPickCount();
 }

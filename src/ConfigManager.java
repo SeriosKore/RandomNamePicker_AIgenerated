@@ -36,7 +36,6 @@ public class ConfigManager {
         properties.setProperty("autoStart", "false");
         properties.setProperty("floatingBallRadius", "50");
         properties.setProperty("floatingBallOpacity", "200");
-        properties.setProperty("multiBallOpacity", "200");
         properties.setProperty("minimizeToTray", "true");
         properties.setProperty("pickCount", "1");
         
@@ -69,7 +68,6 @@ public class ConfigManager {
             allProperties.setProperty("autoStart", properties.getProperty("autoStart", "false"));
             allProperties.setProperty("floatingBallRadius", properties.getProperty("floatingBallRadius", "50"));
             allProperties.setProperty("floatingBallOpacity", properties.getProperty("floatingBallOpacity", "200"));
-            allProperties.setProperty("multiBallOpacity", properties.getProperty("multiBallOpacity", "200"));
             allProperties.setProperty("minimizeToTray", properties.getProperty("minimizeToTray", "true"));
             allProperties.setProperty("pickCount", properties.getProperty("pickCount", "1"));
             allProperties.setProperty("lastScheme", properties.getProperty("lastScheme", ""));
@@ -117,23 +115,6 @@ public class ConfigManager {
     
     public static void setFloatingBallOpacity(int opacity) {
         properties.setProperty("floatingBallOpacity", String.valueOf(opacity));
-        saveConfig();
-    }
-
-    /**
-     * 多人点名动画中奖者小球透明度（0~255），默认为 200。
-     */
-    public static int getMultiBallOpacity() {
-        String value = properties.getProperty("multiBallOpacity", "200");
-        try {
-            return Integer.parseInt(value);
-        } catch (NumberFormatException e) {
-            return 200;
-        }
-    }
-
-    public static void setMultiBallOpacity(int opacity) {
-        properties.setProperty("multiBallOpacity", String.valueOf(opacity));
         saveConfig();
     }
     

@@ -41,6 +41,12 @@ prompt.txt
 #===plugin example build artifacts===
 examples/**/classes/
 examples/**/manifest.txt
-examples/**/ExamplePlugin.jar
+examples/**/*.jar
+examples/PenPlugin/lib/
+
+#===jpackage build artifacts===
+runtime/
+dist/
+
 #===runtime logs===
 modification_log.txt

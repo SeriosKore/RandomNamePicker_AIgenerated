@@ -54,6 +54,7 @@ public class PluginManager {
     private List<SettingsPanelSpec> settingsPanels = new ArrayList<>();
     private List<JComponent> mainComponents = new ArrayList<>();
     private List<JMenu> extraMenus = new ArrayList<>();
+    private List<FloatingBallPickHandler> floatingBallPickHandlers = new ArrayList<>();
 
     public PluginManager(NamePickerApp mainApp) {
         this.mainApp = mainApp;
@@ -174,6 +175,17 @@ public class PluginManager {
 
     public void addExtraMenu(JMenu menu) {
         extraMenus.add(menu);
+    }
+
+    /**
+     * 注册悬浮球名字抽取拦截器（插件接管抽取的扩展点）。
+     */
+    public void addFloatingBallPickHandler(FloatingBallPickHandler handler) {
+        floatingBallPickHandlers.add(handler);
+    }
+
+    public List<FloatingBallPickHandler> getFloatingBallPickHandlers() {
+        return new ArrayList<>(floatingBallPickHandlers);
     }
 
     public List<MenuItemSpec> getMainMenuItemSpecs() {

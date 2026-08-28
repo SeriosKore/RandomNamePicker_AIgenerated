@@ -239,7 +239,8 @@ public class Main {
     /**
      * 解析当前主程序完整路径：
      * 1. 优先从代码源定位（jar 或 exe 文件本身）；
-     * 2. 其次查找工作目录下的 RandomNamePicker.exe（Launch4j 分发场景）。
+     * 2. jpackage 免安装包场景：jar 位于 <app-image>\app\ 下时指向同级 RandomNamePicker.exe；
+     * 3. 其次查找工作目录下的 RandomNamePicker.exe（Launch4j 分发场景）。
      */
     private static String resolveProgramPath() {
         try {
@@ -247,6 +248,18 @@ public class Main {
             if (url != null) {
                 File file = new File(url.toURI());
                 if (file.isFile()) {
+                    if (file.getName().toLowerCase().endsWith(".jar")) {
+                        File parentDir = file.getParentFile();
+                        if (parentDir != null && "app".equalsIgnoreCase(parentDir.getName())) {
+                            File appImageDir = parentDir.getParentFile();
+                            if (appImageDir != null) {
+                                File launcher = new File(appImageDir, "RandomNamePicker.exe");
+                                if (launcher.isFile()) {
+                                    return launcher.getAbsolutePath();
+                                }
+                            }
+                        }
+                    }
                     return file.getAbsolutePath();
                 }
             }

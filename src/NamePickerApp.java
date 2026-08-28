@@ -562,6 +562,13 @@ public class NamePickerApp extends JFrame {
     }
 
     /**
+     * 获取当前悬浮球实例（可能为 null；供插件使用）。
+     */
+    public FloatingBall getFloatingBall() {
+        return floatingBall;
+    }
+
+    /**
      * 修改主窗口中央显示文本（插件 UI 篡改接口）。
      */
     public void setDisplayLabelText(String text) {

@@ -15,7 +15,6 @@ public class FloatingBall extends JWindow {
     private BallPanel ballPanel;
     private int ballRadius;
     private int ballOpacity;
-    private MultiPickBallWindow multiPickWindow;
 
     public FloatingBall(NamePickerApp mainApp) {
         super();
@@ -200,15 +199,29 @@ public class FloatingBall extends JWindow {
         if (timer != null && timer.isRunning()) {
             timer.stop();
         }
-        if (multiPickWindow != null) {
-            try {
-                multiPickWindow.dispose();
-            } catch (Exception ignore) {
-                // 忽略处置异常
-            }
-            multiPickWindow = null;
-        }
         super.dispose();
+    }
+
+    /**
+     * 修改悬浮球显示文本（插件接口）。
+     */
+    public void setDisplayText(String text) {
+        displayLabel.setText(text);
+        ballPanel.repaint();
+    }
+
+    /**
+     * 重绘悬浮球（插件接口）。
+     */
+    public void repaintBall() {
+        ballPanel.repaint();
+    }
+
+    /**
+     * 获取悬浮球半径（插件接口，如多悬浮球插件用于布局）。
+     */
+    public int getBallRadius() {
+        return ballRadius;
     }
 
     private void performRandomPick() {
@@ -253,25 +266,20 @@ public class FloatingBall extends JWindow {
 
         int count = mainApp.getEffectivePickCount();
 
-        if (count <= 1) {
-            // 单人抽取：保持原有单球滚动逻辑不变
-            timer = new Timer(50, e -> {
-                if (counter[0] < maxIterations) {
-                    String randomName = names.get(random.nextInt(names.size()));
-                    displayLabel.setText(randomName.length() > 5 ?
-                            randomName.substring(0, 5) + "..." :
-                            randomName);
-                    counter[0]++;
-                    ballPanel.repaint();
-                } else {
-                    timer.stop();
+        // 插件拦截：允许插件接管本次抽取（如“多悬浮球插件”在数量>1 时展示多球动画）
+        if (mainApp.getPluginManager() != null) {
+            for (FloatingBallPickHandler handler : mainApp.getPluginManager().getFloatingBallPickHandlers()) {
+                try {
+                    if (handler.onNamePick(this, scheme, names, count)) {
+                        return;
+                    }
+                } catch (Throwable t) {
+                    LogManager.log("插件悬浮球抽取拦截器异常: " + t, "PLUGIN_PICK_ERROR");
                 }
-            });
-            timer.start();
-            return;
+            }
         }
 
-        // 多人抽取：主球先滚动，随后中奖者小球围绕主球弹出、旋转、浮动
+        // 默认单人滚动抽取（原有逻辑不变）
         timer = new Timer(50, e -> {
             if (counter[0] < maxIterations) {
                 String randomName = names.get(random.nextInt(names.size()));
@@ -282,38 +290,9 @@ public class FloatingBall extends JWindow {
                 ballPanel.repaint();
             } else {
                 timer.stop();
-                List<String> winners = NamePickerApp.pickDistinct(names, count, random);
-                LogManager.log(scheme.getName() + "-多人抽取=" + String.join("、", winners), "抽取结果");
-                showMultiPickAnimation(winners);
             }
         });
         timer.start();
-    }
-
-    /**
-     * 展示多人点名结果动画：主球体周围弹出中奖者小球。
-     */
-    private void showMultiPickAnimation(List<String> winners) {
-        try {
-            if (multiPickWindow != null) {
-                try {
-                    multiPickWindow.dispose();
-                } catch (Exception ignore) {
-                    // 忽略处置异常
-                }
-                multiPickWindow = null;
-            }
-            Point location = getLocationOnScreen();
-            int centerX = location.x + getWidth() / 2;
-            int centerY = location.y + getHeight() / 2;
-            multiPickWindow = new MultiPickBallWindow(this, new Point(centerX, centerY), winners, ballRadius);
-            multiPickWindow.setVisible(true);
-        } catch (Exception e) {
-            // 动画创建失败时退回文本展示
-            displayLabel.setText(winners.size() <= 3 ?
-                    String.join("、", winners) :
-                    winners.size() + "位中奖者");
-        }
     }
 
     private void performNumberPick(Scheme scheme, int[] counter, int maxIterations) {

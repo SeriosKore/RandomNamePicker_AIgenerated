@@ -37,9 +37,11 @@
 
 - GitHub 仓库：<https://github.com/SeriosKore/RandomNamePicker_AIgenerated>
 - 发布页面（Releases）：<https://github.com/SeriosKore/RandomNamePicker_AIgenerated/releases>
-- 最新版本 **v1.1.0** 新增：名单修改日志、开机自启增强、多人点名（详见 `CHANGELOG.md` 与发布说明）；
+- 最新版本 **v1.1.0** 新增：名单修改日志、开机自启增强、多人点名、插件生态（详见 `CHANGELOG.md` 与发布说明）；
+- **免安装版（推荐）**：`RandomNamePicker-v1.1.0-windows-x64.zip`——解压后双击 `RandomNamePicker.exe` 即可运行，**无需安装 Java 环境**（内置精简运行时，由 jlink + jpackage 生成）；
+- 便携版：`RandomNamePicker.jar`（需 Windows + Java 8 及以上，双击运行）；
 - 历史版本：V0.4.1.2（exe 版 / jar 版）见 Releases 页面；
-- 下载后只需将主程序（JAR/EXE）与名单文件放在**同一目录**运行即可，`data/`、`log/`、`modification_log.txt` 等文件首次运行时自动生成，无需其他辅助文件。
+- 下载后只需将主程序（EXE/JAR）与名单文件放在**同一目录**运行即可，`data/`、`log/`、`modification_log.txt`、`extensions/` 等文件首次运行时自动生成，无需其他辅助文件。
 
 ---
 
@@ -120,19 +122,20 @@
 - 设置界面新增“单次抽取数量”设置项（最小值 1，最大值 = 当前名单总人数）；
 - 非法值（非数字、小于 1、大于名单总人数）被拒绝并提示；名单人数变化导致设置值超限时，自动修正为当前最大值并提示；
 - 抽取数量为 1 时悬浮球保持原有单球效果；
-- 抽取数量大于 1 时，悬浮球变为主球体 + 中奖者小球从主球周围**弹出、旋转、浮动**的动画，每个小球显示对应姓名；
-- 多人抽取结果**自动去重**且不超过名单总人数；主窗口同时以“姓名1、姓名2…”形式展示全部中奖者；
-- **多球透明度可调**：设置界面“悬浮球外观”新增“多球透明度”滑块（50~255）；
-- **尾迹渐隐动画**：中奖者小球运动轨迹以渐隐尾迹呈现（逐帧 Alpha 衰减），尾迹逐渐消失；
-- **多环防重叠布局**：中奖人数较多时自动排列为多个同心圆环——每环容量按“周长 ÷ (小球直径 + 间隙)”计算，相邻环错开半个相位、内环转速快于外环，保证各小球互不重叠。
+- 多人抽取结果**自动去重**且不超过名单总人数；主窗口以“姓名1、姓名2…”形式展示全部中奖者；
+- **悬浮球多球动画由“多悬浮球插件”提供**（见 2.13）：中奖者小球围绕主球弹出/旋转/浮动、渐隐尾迹、多环防重叠、透明度可调。
 
 ### 2.13 插件生态（不修改主程序即可扩展功能）
 
 - 将插件 JAR（清单文件含 `Plugin-Class` 属性）放入程序运行目录下的 `extensions/` 文件夹，程序启动时**自动扫描并加载**；
-- 标准扩展点：主窗口“插件”菜单、主窗口插件按钮区、系统托盘菜单、悬浮球右键菜单、设置窗口插件面板；
+- 标准扩展点：主窗口“插件”菜单、主窗口插件按钮区、系统托盘菜单、悬浮球右键菜单、设置窗口插件面板、**悬浮球抽取拦截**（`FloatingBallPickHandler`）；
 - **UI 篡改接口**：插件可注入自定义菜单/组件（`registerMainComponent`/`addMainMenu`）、修改主窗口显示文本（`setMainDisplayText`）、直接获取主窗口实例（`getMainApp()`）自由改造界面；
 - 插件异常被隔离：加载/运行失败只记录日志，不影响主程序与其他插件；程序退出时自动调用 `onUnload()` 卸载；
-- 附带 `ExamplePlugin` 示例插件与构建脚本（`examples/ExamplePlugin/`），完整演示全部扩展点与篡改接口；开发规范见[第 12 节](#12-插件开发指南)。
+- 插件与主程序同一 JVM，请仅加载可信来源的插件；
+- 随仓库发布的插件：
+  - **多悬浮球插件(示例插件)** `MultiBallPlugin`：接管多人点名的悬浮球抽取，展示多球动画（透明度设置面板）；
+  - **屏幕画笔插件** `PenPlugin`：参考 Seewo 白板悬浮球画笔——全屏透明画布、原生指针输入、笔锋随速度/压感变化、渐细起收笔、触屏大面积接触自动识别为橡皮（鼠标右键亦为橡皮）；
+- 开发规范：见《`docs/插件接口文档.md`》与《`docs/插件开发文档.md`》，示例源码在 `examples/`。
 
 ---
 
@@ -214,10 +217,9 @@
 | --- | --- | --- |
 | `Main` | 表现层 | 程序入口；系统托盘创建与菜单；注册表开机自启动的注册/注销/查询（自动定位主程序路径，非 Windows 跳过） |
 | `NamePickerApp` | 表现层 | 主窗口：方案/模式选择、抽取动画控制、多人点名结果展示、调度各子窗口、悬浮球生命周期管理 |
-| `FloatingBall` | 表现层 | 置顶悬浮球：拖拽、双击抽取、右键菜单、置顶保持、多人点名多球动画调度 |
-| `MultiPickBallWindow` | 表现层 | 多人点名动画窗口：主球体 + 中奖者小球弹出/旋转/浮动、渐隐尾迹、多环防重叠布局、多球透明度 |
+| `FloatingBall` | 表现层 | 置顶悬浮球：拖拽、双击抽取、右键菜单、置顶保持；名字抽取前回调插件拦截器 |
 | `ConfigWindow` | 表现层 | 名单管理对话框：表格增删、导入导出、保存 |
-| `SettingsWindow` | 表现层 | 系统设置对话框：自启动、托盘策略、悬浮球外观（含多球透明度）、单次抽取数量、日志导出/查看、插件面板、锁定/改密 |
+| `SettingsWindow` | 表现层 | 系统设置对话框：自启动、托盘策略、悬浮球外观、单次抽取数量、日志导出/查看、插件面板、锁定/改密 |
 | `SchemeManagerDialog` | 表现层 | 方案的创建与删除 |
 | `NumberPicker` | 表现层 | 数字范围设置与试抽 |
 | `SeatPicker` | 表现层 | 座位网格生成、座位点选、试抽与保存 |
@@ -232,6 +234,7 @@
 | `ModificationLogManager` | 数据层 | 名单修改日志（modification_log.txt）追加写入与读取 |
 | `PluginManager` | 插件层 | 扫描 extensions/*.jar 并加载插件；维护各扩展点注册表；退出时统一卸载 |
 | `Plugin` / `PluginContext` | 插件层 | 插件开发接口与插件上下文（标准扩展点 + UI 篡改接口） |
+| `FloatingBallPickHandler` | 插件层 | 悬浮球抽取拦截扩展点（插件接管抽取的入口） |
 | `EncryptionUtil` | 工具层 | AES-GCM 加解密（PBKDF2 派生密钥）、RSA 加解密、SHA-256 哈希、Base64 |
 
 ---
@@ -240,11 +243,10 @@
 
 ```
 RandomNamePicker/
-├── src/                          # 全部源代码（26 个类，默认包）
+├── src/                          # 主程序源代码（默认包）
 │   ├── Main.java                 # 程序入口 + 系统托盘 + 开机自启动
 │   ├── NamePickerApp.java        # 主窗口
 │   ├── FloatingBall.java         # 桌面悬浮球
-│   ├── MultiPickBallWindow.java  # 多人点名多球动画窗口
 │   ├── ConfigWindow.java         # 名单配置窗口
 │   ├── SettingsWindow.java       # 系统设置窗口
 │   ├── SchemeManagerDialog.java  # 方案管理窗口
@@ -259,7 +261,10 @@ RandomNamePicker/
 │   ├── NumberModeHandler.java    # 数字模式处理器
 │   ├── SeatModeHandler.java      # 座位模式处理器
 │   ├── NameManager.java          # 名单业务逻辑
-│   ├── SchemeManager.java        # 方案业务逻辑（含 Scheme/NumberRange/SeatConfig 模型）
+│   ├── SchemeManager.java        # 方案业务逻辑
+│   ├── Scheme.java               # 方案模型（public）
+│   ├── NumberRange.java          # 数字范围模型（public）
+│   ├── SeatConfig.java           # 座位配置模型（public）
 │   ├── DataManager.java          # 加密数据读写与备份恢复
 │   ├── ConfigManager.java        # 配置文件管理
 │   ├── LogManager.java           # 操作日志管理
@@ -268,6 +273,7 @@ RandomNamePicker/
 │   ├── PluginContext.java        # 插件上下文（扩展点 + UI 篡改接口）
 │   ├── PluginManager.java        # 插件扫描/加载/注册/卸载
 │   ├── PluginContextImpl.java    # 插件上下文实现
+│   ├── FloatingBallPickHandler.java # 悬浮球抽取拦截扩展点
 │   ├── EncryptionUtil.java       # 加密与哈希工具
 │   └── PasswordManager.java      # 密码与锁定状态管理
 ├── plugins/                      # 辅助脚本
@@ -276,10 +282,15 @@ RandomNamePicker/
 │   ├── selftest/SelfCheck.java   # 自检类（名单日志/去重抽取/配置项）
 │   ├── Creator.bat               # 注册开机自启动（注册表）
 │   └── LogClearer.bat            # 注销开机自启动（注册表）
-├── examples/                     # 插件开发示例
-│   └── ExamplePlugin/            # 示例插件（源码 + 构建脚本 + 成品 JAR）
+├── examples/                     # 插件开发示例（源码 + 构建脚本）
+│   ├── MultiBallPlugin/          # 多悬浮球插件(示例插件)
+│   └── PenPlugin/                # 屏幕画笔插件（含 JNA 原生层）
 ├── extensions/                   # 运行时插件目录：放入插件 JAR 即自动加载
-│   └── ExamplePlugin.jar         # 示例插件（可删除以禁用）
+│   ├── MultiBallPlugin.jar       # 多悬浮球插件(示例插件)
+│   └── PenPlugin.jar             # 屏幕画笔插件（含 JNA，fat JAR）
+├── docs/                         # 插件文档
+│   ├── 插件接口文档.md           # 全部插件 API 参考
+│   └── 插件开发文档.md           # 插件开发教程
 ├── build.bat                     # 编译打包脚本（位于根目录，双击即可运行）
 ├── data/                         # 运行时生成：配置与加密数据
 │   ├── config.properties         # 全局配置
@@ -452,7 +463,6 @@ java -jar RandomNamePicker.jar
 | `autoStart` | 开机自启动 | `false` |
 | `floatingBallRadius` | 悬浮球半径（像素） | `50` |
 | `floatingBallOpacity` | 悬浮球透明度（0~255） | `200` |
-| `multiBallOpacity` | 多人点名动画多球透明度（0~255） | `200` |
 | `minimizeToTray` | 关闭窗口时最小化到托盘 | `true` |
 | `pickCount` | 单次抽取数量（多人点名，1 ~ 当前名单总人数） | `1` |
 | `lastScheme` | 上次使用的方案（自动记忆） | （空） |
@@ -468,12 +478,15 @@ java -jar RandomNamePicker.jar
 4. **冗余代码**：`EncryptionUtil` 中的 RSA 加解密方法与 `ChangePasswordDialog` 未被主流程使用（设置窗口改密走 `OldPasswordDialog` + `NewPasswordDialog` 流程），可清理；
 5. **抽取公平性**：当前每次抽取相互独立，同一目标可能被连续抽中；多人点名已支持去重，如需“历史不重复抽取”可引入已抽取集合与去重逻辑；
 6. **界面**：主窗口中部结果区功能较简单，可扩展为抽奖转盘、历史结果列表等更丰富的可视化效果。
-7. **多人动画**：中奖者小球姓名超过 6 字时以省略号展示（与单人模式截断逻辑一致），动画窗口点击或 15 秒后自动关闭。
-8. **插件权限**：插件与主程序运行在同一 JVM、共享全部权限，请仅加载可信来源的插件。
+7. **多人动画**：中奖者小球姓名超过 6 字时以省略号展示（与单人模式截断逻辑一致），动画窗口点击或 15 秒后自动关闭（该动画现由“多悬浮球插件”提供）；
+8. **插件权限**：插件与主程序运行在同一 JVM、共享全部权限，请仅加载可信来源的插件；
+9. **画笔插件**：画笔模式为全屏覆盖层，绘画期间会拦截全屏输入（与 Seewo 画笔模式一致），按 Esc 或“退出”结束；多屏仅覆盖主显示器；系统 DPI 缩放非 100% 时笔迹坐标可能有轻微偏移。
 
 ---
 
 ## 12. 插件开发指南
+
+> 完整 API 参考见《`docs/插件接口文档.md`》，从零开发教程见《`docs/插件开发文档.md`》。本节为速查版。
 
 ### 12.1 快速上手
 
@@ -482,7 +495,7 @@ java -jar RandomNamePicker.jar
 3. 打包 JAR 时在清单文件（manifest）中加入一行 `Plugin-Class: 你的类全名`；
 4. 把 JAR 放入程序运行目录下的 `extensions/` 文件夹，启动程序即自动加载。
 
-参考 `examples/ExamplePlugin/`（源码 + `build.bat` 一键构建）。
+参考 `examples/MultiBallPlugin/`（简单）与 `examples/PenPlugin/`（含 JNA 原生层与 fat JAR 打包）。
 
 ### 12.2 标准扩展点（PluginContext）
 
@@ -493,8 +506,9 @@ java -jar RandomNamePicker.jar
 | `registerTrayMenuItem(text, action)` | 系统托盘菜单项 |
 | `registerFloatingBallMenuItem(text, action)` | 悬浮球右键菜单项 |
 | `registerSettingsPanel(title, panel)` | 设置窗口插件面板 |
+| `registerFloatingBallPickHandler(handler)` | 接管悬浮球名字抽取（返回 true 即接管） |
 | `getNameManager()` / `getSchemeManager()` | 访问名单/方案服务 |
-| `getCurrentScheme()` / `getCurrentMode()` | 读取当前上下文 |
+| `getCurrentScheme()` / `getCurrentMode()` / `getPickCount()` | 读取当前上下文 |
 
 ### 12.3 UI 篡改接口
 

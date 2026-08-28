@@ -34,6 +34,11 @@ class PluginContextImpl implements PluginContext {
     }
 
     @Override
+    public void registerFloatingBallPickHandler(FloatingBallPickHandler handler) {
+        manager.addFloatingBallPickHandler(handler);
+    }
+
+    @Override
     public void registerSettingsPanel(String title, JComponent panel) {
         manager.addSettingsPanel(title, panel);
     }
@@ -76,5 +81,10 @@ class PluginContextImpl implements PluginContext {
     @Override
     public String getCurrentMode() {
         return app.getCurrentMode();
+    }
+
+    @Override
+    public int getPickCount() {
+        return ConfigManager.getPickCount();
     }
 }
