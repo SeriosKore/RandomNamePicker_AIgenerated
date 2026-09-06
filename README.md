@@ -28,11 +28,13 @@
 
 **Stage2 验收摘要（2026-09-04）**：模式策略重构完成——`ModeHandler` 契约收敛为 8 个抽象方法（删除死方法 getModeButton1/2），新增 `ModeHost` / `RollingPicker` / `ModeRegistry`，三个内置 Handler 与主窗/悬浮球共用 `canPick()+nextCandidate()`；主窗统一抽取入口、悬浮球双击滚动收敛到同一引擎与取样。全量 javac（Stage1 方式 A）零错误（40 个 class / 29 个 .java）；模拟插件经注册表注册后验证"出现于下拉框并可抽取"，验证后已删除。期间修复两处问题：① `NamePickerApp` 为满足 `ModeHost.getOwner()` 以 Frame 协变重写 `Window.getOwner()` 返回自身 → 所有模态子窗口白屏死锁（`getOwner()` 改返回 `java.awt.Window`，宿主不再重写，见 §6-13）；② `ConfigWindow` 把两行都 `add` 到 `BorderLayout.SOUTH`，后行覆盖前行致"姓名 + 添加/删除"不可见（改为纵向叠放复原，见 §6-14）。改动前副本在 `.stage2_originals/`，改动/验收/测试清单见 `Stage2_交付报告.md`。
 
-**Stage3 验收摘要（2026-09-04）**：新增 `com.randomnamepicker.plugin` 包（`Plugin`/`PluginContext`/`PluginManager`，决策见 `Stage3.txt` §0 D0.1–D0.14）。加载机制 = 后台线程扫描运行目录 `plugins/`（不阻塞 UI）→ 每 jar 一个 parent-first URLClassLoader、作为**原子事务单元**：类条目加载失败 / 实例化失败 / onLoad 异常 / 提交冲突（撞内置或更早插件或同 jar 互撞）→ **整 jar 拒载并回滚**；注册动作先入 per-plugin 暂存区，onLoad 全部成功才统一提交并冲突预检，提交成功后 EDT 一次性刷新 UI——无半状态残留。主窗新增"插件"菜单（无插件也为空菜单）并含只读插件"名称 版本"，模式下拉框并入插件模式（无附加按钮时隐藏第 4/6 格按钮），托盘菜单整体重建追加插件项，悬浮球右键菜单追加插件项（每次新建实例读取），退出时 `cleanupAndExit` 先 `PluginManager.shutdown()`（逐 onUnload + 关闭 ClassLoader）。全量 javac 零错误（32 个 .java）；示例插件 `examples/plugin-example/`（`示例插件模式`→固定串 `Hello from Plugin`）与三个坏样例（构造抛异常 / onLoad 抛异常 / 与内置冲突）均已编译产出 jar；自动化 UI 驱动两组场景 PASS：无插件（3 内置模式 + 空插件菜单 + 0 插件）与混合场景（仅好插件提交、三个坏 jar 整包拒载且无菜单/模式残留、插件模式可正常抽取、日志 PLUGIN_LOADED×1 / PLUGIN_LOAD_ERROR×3 / PLUGIN_UNLOADED）。`RandomNamePicker.jar` 已重建为 Stage3 版；`plugins/ExamplePlugin.jar` 已放置（删除该 jar 即回到无插件形态）。改动前副本在 `.stage3_originals/`，改动/验收/测试清单见 `Stage3_交付报告.md`。
+**Stage3 验收摘要（2026-09-04）**：新增 `com.randomnamepicker.plugin` 包（`Plugin`/`PluginContext`/`PluginManager`，决策见 `Stage3.txt` §0 D0.1–D0.14）。加载机制 = 后台线程扫描运行目录 `plugins/`（不阻塞 UI）→ 每 jar 一个 parent-first URLClassLoader、作为**原子事务单元**：类条目加载失败 / 实例化失败 / onLoad 异常 / 提交冲突（撞内置或更早插件或同 jar 互撞）→ **整 jar 拒载并回滚**；注册动作先入 per-plugin 暂存区，onLoad 全部成功才统一提交并冲突预检，提交成功后 EDT 一次性刷新 UI——无半状态残留。主窗新增"插件"菜单（无插件也为空菜单）并含只读插件"名称 版本"，模式下拉框并入插件模式（无附加按钮时隐藏第 4/6 格按钮），托盘菜单整体重建追加插件项（当时为原生 AWT 菜单；2026 起改为 Swing 中文弹出菜单，见 §4.6），悬浮球右键菜单追加插件项（每次新建实例读取），退出时 `cleanupAndExit` 先 `PluginManager.shutdown()`（逐 onUnload + 关闭 ClassLoader）。全量 javac 零错误（32 个 .java）；示例插件 `examples/plugin-example/`（`示例插件模式`→固定串 `Hello from Plugin`）与三个坏样例（构造抛异常 / onLoad 抛异常 / 与内置冲突）均已编译产出 jar；自动化 UI 驱动两组场景 PASS：无插件（3 内置模式 + 空插件菜单 + 0 插件）与混合场景（仅好插件提交、三个坏 jar 整包拒载且无菜单/模式残留、插件模式可正常抽取、日志 PLUGIN_LOADED×1 / PLUGIN_LOAD_ERROR×3 / PLUGIN_UNLOADED）。`RandomNamePicker.jar` 已重建为 Stage3 版；`plugins/ExamplePlugin.jar` 已放置（删除该 jar 即回到无插件形态）。改动前副本在 `.stage3_originals/`，改动/验收/测试清单见 `Stage3_交付报告.md`。
 
 **执行任务书文件**：`Stage1.txt` / `Stage2.txt` / `Stage3.txt` 是交给 AI 的分阶段改造 prompt（已修订为可行版本），执行结果需按其中的验收标准核对后再进入下一阶段。
 
 **插件 UI 槽迭代（2026-09-04/05，承接 Stage3）**：统一 Zone 架构（`PluginContext.addUiAction(UiZone,…)` + PluginManager Zone 注册表 + `PluginUiSupport` 多渲染端）。一期在设置窗试点并验收；二期推广至全部业务窗口——主窗（3×2 按钮阵下方两列按钮区，其上有"插件"标识 + 分隔线）、配置名单、方案管理、数字设置、座位设置，外加一期设置窗，共六个窗口 Zone；另有 `MAIN_MENU/TRAY_MENU/FLOATING_BALL_MENU` 三个既有菜单 Zone（旧菜单 API 为 default 委托）。空 Zone 零渲染、严格 null-zone 拒载、无运行中热插拔。自动化 none/all 场景 PASS；`RandomNamePicker.jar` 已重建；示例 `plugins/ExamplePlugin.jar`（2.0）已并入 UI 槽演示功能："注意"按钮出现在六个窗口，点击弹窗"无运行中热插拔：增删插件/改按钮都要重启"（原 SettingsZoneDemoPlugin 已并入并移出 plugins）。详见《插件UI槽一期/二期任务书与交付报告》。
+
+**宿主插件生态一期（插件体系二次开发一期，2026 实施）**：在不动加载内核的前提下补齐——① 打包禁令强制（jar 内 `com/randomnamepicker/` 前缀 .class 条目 → 整 jar 拒载 `BUNDLED_HOST_CLASS`）；② API 级别门控（`HostApi.PLUGIN_API_LEVEL`，基线 1 → 本期 **2**；插件可经 Manifest `Api-Level-Min` 声明，不符 → `VERSION_MISMATCH` 拒载）；③ 宿主事件订阅（九类：PLUGINS_CHANGED/SCHEME_CHANGED/MODE_CHANGED/PICK_STARTED/PICK_FINISHED/LOCK_CHANGED/BALL_SHOWN/BALL_HIDDEN/BALL_MOVED，EDT 防御派发、按 jar+实现类自动清理，含 Ctrl+L×10 后门锁事件，PasswordManager 零改动）；④ 加载结果可观测（`LoadOutcome`/`RejectReason` + 主窗"插件"菜单尾"插件状态…"入口）；⑤ 悬浮球窗口钩子（G1 `ModeHost` 几何只读查询、G2 BALL_* 事件、G4 `ModeHandler.getContextMenuItems()` 模式专属右键项）。新增 `plugin/HostApi.java`、`plugin/HostEvent.java`、`plugin/HostEventListener.java`；`ModeRegistry.register/unregister` 收紧为宿主内部；`ModeHost`/`ModeHandler` 仅新增只读/default 方法。源码 45 个 .java（主 jar 76 个 class）。`plugins/` 现含 ExamplePlugin.jar、CountUpTimerBall.jar 与新增 EventsDemoPlugin.jar；QA 新增 BadBundlePlugin（打包违规）与 BadVersionPlugin（级别不符）。另：**托盘菜单已由原生 AWT 菜单改为 Swing 中文弹出菜单**（托盘图标单击/双击唤出，规避系统菜单字体显示中文为方框的平台限制，详见《插件开发文档.md》§15.7）。详见《插件体系二次开发一期任务书/交付报告》。
 
 `.sp-review/` 是某执行方下载的评审工具包缓存，与项目无关，可忽略或删除。
 
@@ -112,7 +114,7 @@ log/
 ### main 包 — 入口与宿主
 | 类 | 职责 |
 |---|---|
-| `Main` | main 入口。系统外观初始化、密码初始化、开机自启检查；创建系统托盘（16px 程序绘制"抽"字图标）；托盘菜单：显示/隐藏主窗、开关悬浮球、退出（菜单含插件项时为"内置项＋插件项＋退出"，插件加载后 EDT 整体重建 `rebuildTrayMenu`）；`registerAutoStart/unregisterAutoStart/checkAutoStartStatus` 用 `reg` 命令操作 `HKCU\...\CurrentVersion\Run` 键值 `RandomNamePicker`（指向 `<user.dir>\RandomNamePicker.exe`，无 exe 时报错）；`cleanupAndExit` 全局退出（Stage3：先 `PluginManager.shutdown()` 卸载插件并关闭 ClassLoader）。启动时序（Stage3，EDT）：`new NamePickerApp()` → `PluginManager.init(app)` → 显示主窗 → **后台线程** `PluginManager.loadAllAsync()`（不阻塞 UI）→ 提交成功后 EDT 刷新主窗菜单/下拉框并重建托盘。 |
+| `Main` | main 入口。系统外观初始化、密码初始化、开机自启检查；创建系统托盘（16px 程序绘制"抽"字图标）；托盘菜单 = **Swing 中文弹出菜单**（`buildSwingTrayMenu`：显示/隐藏主窗、开关悬浮球、退出，含插件项时为"内置项＋插件项＋退出"；托盘图标**单击/双击**在屏幕右下角唤出，双击 350ms 去抖；插件加载后 EDT 整体重建 `refreshTrayMenu`）——原生 AWT 托盘菜单因系统字体不含中文字形会显示方框，已弃用；`registerAutoStart/unregisterAutoStart/checkAutoStartStatus` 用 `reg` 命令操作 `HKCU\...\CurrentVersion\Run` 键值 `RandomNamePicker`（指向 `<user.dir>\RandomNamePicker.exe`，无 exe 时报错）；`cleanupAndExit` 全局退出（Stage3：先 `PluginManager.shutdown()` 卸载插件并关闭 ClassLoader）。启动时序（Stage3，EDT）：`new NamePickerApp()` → `PluginManager.init(app)` → 显示主窗 → **后台线程** `PluginManager.loadAllAsync()`（不阻塞 UI）→ 提交成功后 EDT 刷新主窗菜单/下拉框并重建托盘菜单。 |
 
 ### ui 包 — 主窗体与全部对话框
 | 类 | 职责 |
@@ -205,7 +207,7 @@ log/
 - 解锁入口：设置 →"锁定/解锁配置" → 验密成功后 `PasswordManager.unlock()`。
 
 ### 4.6 系统托盘与开机自启
-- 托盘提供：显示/隐藏主窗、显示/隐藏悬浮球、退出（二次确认后 `cleanupAndExit`）。双击托盘图标切换主窗可见性。
+- 托盘图标 = 16px 程序绘制"抽"字（见 `Main`）；**单击/双击图标**在屏幕右下角唤出 **Swing 中文弹出菜单**：显示/隐藏主窗、显示/隐藏悬浮球、插件项、退出（二次确认后 `cleanupAndExit`）；双击去抖（350ms）只弹一次；菜单显示中再点图标即收起。托盘菜单用 Swing 渲染（原生 AWT 托盘菜单用系统 Segoe UI 字体不含中文，会显示方框，故弃用）。
 - 主窗关闭行为：`minimizeToTray=true`（默认）→ 仅隐藏窗口；false → 直接退出整个程序。
 - 开机自启 = 写/删/查注册表 `HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run` 下值 `RandomNamePicker`（Main 内通过 `reg add/delete/query` 子进程实现；依赖工作目录存在 `RandomNamePicker.exe`）。设置窗勾选即调用，tools 脚本为手工等价物。注意：插件化/jlink 化后 exe 路径布局会变，届时需同步适配此处定位逻辑。
 
@@ -220,7 +222,7 @@ log/
 - 加载：后台线程（不阻塞 UI）→ 每 jar 新建 **parent-first URLClassLoader** → 遍历 .class 条目（跳过 `module-info.class` 与 `META-INF/versions/`）→ `Class.forName` 收集 `Plugin` 实现类（非抽象、public、无参构造）→ 实例化并 `onLoad(ctx)`。`ctx.getModeHost()` 让插件以 ModeHost 构造自己的 ModeHandler（D0.1）。
 - 事务与失败隔离（以 jar 为单元）：类条目加载失败 / 实例化失败 / onLoad 异常 / 提交冲突（modeId 或 displayName 撞内置或更早提交插件或同 jar 候选互撞）→ **整 jar 原子拒载**并记 `PLUGIN_LOAD_ERROR`；已 onLoad 的候选补 `onUnload`；不中断其它 jar。坏插件不影响主程序与好插件。
 - 暂存-提交：onLoad 期间的 `registerModeHandler/addXxxMenuAction` 只写本插件 pending，不触 UI/注册表；jar 内全部候选 onLoad 成功后才统一提交并冲突预检；失败路径丢弃 pending，**无半状态残留**。菜单标题不判重。
-- 展示：主窗"插件"菜单 = 插件功能项 + 分隔线 + 只读"名称 版本"；模式下拉框 = 内置（前）+ 插件（提交序，后）；无附加按钮（getButton*Text 为 null/空）时主窗第 4/6 格按钮隐藏；插件模式无 schemeType，切换方案不会自动拨动它。托盘菜单 = 内置项 + 插件项 + 退出（提交后整体重建）；悬浮球每次新建实例读取当前插件项追加到右键菜单。
+- 展示：主窗"插件"菜单 = 插件功能项 + 分隔线 + 只读"名称 版本"；模式下拉框 = 内置（前）+ 插件（提交序，后）；无附加按钮（getButton*Text 为 null/空）时主窗第 4/6 格按钮隐藏；插件模式无 schemeType，切换方案不会自动拨动它。托盘菜单（Swing，单击/双击图标唤出，见 §4.6）= 内置项 + 插件项 + 退出（提交后整体重建）；悬浮球每次新建实例读取当前插件项追加到右键菜单。
 - 防御（D0.5）：onLoad/onUnload/菜单动作/`canPick()`/`nextCandidate()` 调用点均 try/catch（含 LinkageError 边界），失败只记日志并回退占位显示。
 - 生命周期：不做运行中热插拔——增删 `plugins/` 下 jar 需重启；退出（托盘"退出"或主窗关闭且非最小化到托盘）经 `Main.cleanupAndExit` → `PluginManager.shutdown()`（逐个 onUnload → 关闭全部 URLClassLoader → 清空注册）。
 - 插件开发：示例与坏样例见 `examples/plugin-example/`（含 `BUILD.txt`）与 `examples/plugin-qa/`；插件 jar 只允许包含自身类与资源，**禁止打包 `com/randomnamepicker/**`**（API 由宿主 parent-first 提供，不做强制检查，文档约束）。

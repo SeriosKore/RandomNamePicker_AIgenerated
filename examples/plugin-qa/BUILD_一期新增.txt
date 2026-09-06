@@ -1,0 +1,36 @@
+# plugin-qa 新增两件坏样例（宿主插件生态一期）编译打包说明
+
+沿用既有四个坏样例（BadCtor/BadOnLoad/Conflict/BadNullZone）的用途：验证“整 jar 原子拒载”。
+本期新增两件（对照任务书 T11）：
+
+| jar | 缺陷 | 预期宿主反应 | 原因码 |
+|---|---|---|---|
+| `BadBundlePlugin.jar` | jar 内打包了 `com/randomnamepicker/probe/BundledHostProbe.class`（宿主包前缀条目） | 类加载前整 jar 拒载 | `BUNDLED_HOST_CLASS` |
+| `BadVersionPlugin.jar` | Manifest 声明 `Api-Level-Min: 9999`（宿主当前 = 2） | 类加载前整 jar 拒载 | `VERSION_MISMATCH` |
+
+## 编译（JDK 22，以主工程 out 为 API 类路径；在 examples/plugin-qa 目录执行）
+
+```
+"C:\Program Files\Java\jdk-22\bin\javac.exe" -encoding UTF-8 -cp ../../out -d build_qa BadBundlePlugin.java BadVersionPlugin.java
+"C:\Program Files\Java\jdk-22\bin\javac.exe" -encoding UTF-8 -d build_probe -cp ../../out ../../examples/plugin-qa/bundle-src/com/randomnamepicker/probe/BundledHostProbe.java
+```
+
+（BadBundlePlugin 需把 probe 类一并编进同一 build 目录再打包：
+建议 `javac -d build_bundle BadBundlePlugin.java bundle-src/com/randomnamepicker/probe/BundledHostProbe.java` 后 `jar cf` build_bundle。）
+
+## 打包
+
+```
+:: BadBundlePlugin.jar（含违规宿主包条目 → 拒载 BUNDLED_HOST_CLASS）
+"C:\Program Files\Java\jdk-22\bin\jar.exe" cf BadBundlePlugin.jar -C build_bundle .
+
+:: BadVersionPlugin.jar（带 Api-Level-Min: 9999 清单 → 拒载 VERSION_MISMATCH）
+"C:\Program Files\Java\jdk-22\bin\jar.exe" cfm BadVersionPlugin.jar BadVersionPlugin.manifest -C build_qa2 .
+```
+
+（build_qa2 只含 BadVersionPlugin.class，不含 probe。）
+
+## 验证
+
+- `BadVersionPlugin.jar`：`jar xf` 后看 `META-INF/MANIFEST.MF` 含 `Api-Level-Min: 9999`。
+- 放入 `plugins/` 重启 → 日志 `PLUGIN_LOAD_ERROR`，原因码对应上面表格；好插件不受影响、无 UI 残留。

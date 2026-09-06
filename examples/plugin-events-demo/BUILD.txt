@@ -1,0 +1,45 @@
+# EventsDemoPlugin（宿主事件演示插件）编译打包说明 —— 宿主插件生态一期
+
+依据《插件体系二次开发一期任务书.md》（T11 / D6~D10 / G1~G5 / F1~F3）编写；
+宿主 `src/` 零改动（宿主为二次开发一期实现），仅新增本插件源码与 jar。
+
+## 源码与资源文件
+
+- `EventsDemoPlugin.java` —— 插件入口（实现 `Plugin`）：订阅宿主事件（PICK/方案/模式/插件集/锁/悬浮球
+  BALL_SHOWN/HIDDEN/MOVED）并写日志 `EVENT_DEMO`；注册一个带“模式专属悬浮球右键项”的模式
+  （`getContextMenuItems`，G4）；onUnload 显式退订（宿主亦自动清理，双保险）。
+- `EventsDemo.manifest` —— jar 清单（声明 `Api-Level-Min: 2`，宿主当前级别 = 2，应加载成功；
+  这是插件版本契约（D8）的“通过”样例，对照 `examples/plugin-qa/BadVersionPlugin` 的“拒载”样例）。
+
+## 编译（JDK 22，以主工程 out 为 API 类路径）
+
+在 `examples/plugin-events-demo` 目录执行：
+
+```
+"C:\Program Files\Java\jdk-22\bin\javac.exe" -encoding UTF-8 -cp ../../out -d build EventsDemoPlugin.java
+```
+
+（若主工程 `out/` 过期，先运行 `tools\build.bat` 重编主工程。）
+
+## 打包（带自定义清单）
+
+```
+"C:\Program Files\Java\jdk-22\bin\jar.exe" cfm EventsDemoPlugin.jar EventsDemo.manifest -C build .
+```
+
+## 安装 / 卸载
+
+- 安装：把 `EventsDemoPlugin.jar` 复制到程序运行目录的 `plugins/`，重启程序（无热插拔）。
+- 卸载：删除该 jar 后重启。
+- 自检（不应出现宿主条目）：`jar tf EventsDemoPlugin.jar` 无 `com/randomnamepicker/` 条目。
+
+## 预期效果（对照任务书 §6 验收 8/9）
+
+- 主窗/悬浮球真实抽取 → 日志 `EVENT_DEMO`（PICK_STARTED/PICK_FINISHED，含结果）；
+- 数据缺失被拦截路径 → 无 PICK 事件日志（Q2）；
+- 用户切方案/模式 → SCHEME/MODE 日志；用户切方案触发自动联动 → MODE_CHANGED 照发（F3）；
+  启动恢复/方案管理重载/插件集刷新 → 无 SCHEME/MODE 日志（Q3）；
+- 锁定/解锁/Ctrl+L×10 → LOCK_CHANGED 日志各一次（无重复；G5）；
+- 打开悬浮球 → BALL_SHOWN；拖动 → BALL_MOVED（节流）；隐藏/关闭 → BALL_HIDDEN（G2/F1）；
+- 模式下拉框出现“事件演示模式”；当前模式为它时，悬浮球右键菜单出现“事件演示：模式专属项”（G4）；
+- 卸载/拒载后不再收到事件（宿主自动清理）。

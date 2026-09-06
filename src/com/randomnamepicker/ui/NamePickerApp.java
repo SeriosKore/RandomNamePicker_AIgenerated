@@ -11,6 +11,7 @@ import com.randomnamepicker.mode.ModeHandler;
 import com.randomnamepicker.mode.ModeHost;
 import com.randomnamepicker.mode.ModeRegistry;
 import com.randomnamepicker.model.Scheme;
+import com.randomnamepicker.plugin.HostEvent;
 import com.randomnamepicker.plugin.PluginManager;
 import com.randomnamepicker.plugin.UiZone;
 import java.awt.*;
@@ -46,6 +47,8 @@ public class NamePickerApp extends JFrame implements ModeHost {
     private JLabel pluginCaptionLabel;
     private JSeparator pluginSeparator;
     private boolean suppressModeEvent = false;
+    /** Q3：方案下拉的程序化刷新（构造恢复/方案管理后重载等）屏蔽 SCHEME_CHANGED 派发。 */
+    private boolean suppressSchemeEvent = false;
 
 
     public NamePickerApp() {
@@ -56,9 +59,17 @@ public class NamePickerApp extends JFrame implements ModeHost {
         initializeComponents();
         setupLayout();
         setupEventHandlers();
-        loadSchemes();
-        updateModeSpecificButtons();
-        restoreLastScheme();
+        // Q3：构造期的方案填充与恢复属程序化刷新——行为（联动/保存）照常，但不派发 SCHEME/MODE 事件
+        suppressSchemeEvent = true;
+        suppressModeEvent = true;
+        try {
+            loadSchemes();
+            updateModeSpecificButtons();
+            restoreLastScheme();
+        } finally {
+            suppressSchemeEvent = false;
+            suppressModeEvent = false;
+        }
         setupWindowCloseBehavior();
         // 插件提交成功后（EDT）刷新“插件”菜单与模式下拉框
         PluginManager.getInstance().addUIListener(this::onPluginSetChanged);
@@ -193,8 +204,20 @@ public class NamePickerApp extends JFrame implements ModeHost {
             }
             onModeChanged();
             updateModeSpecificButtons();
+            // Q3/F3：未被 suppress = 用户驱动（含用户切方案触发的方案→模式自动联动），照发 MODE_CHANGED
+            dispatchModeChangedEvent();
         });
         schemeComboBox.addActionListener(e -> {
+            boolean userDriven = !suppressSchemeEvent;
+            if (userDriven) {
+                // 先发 SCHEME_CHANGED（保持“先方案后模式”的因果顺序；联动产生的 MODE_CHANGED 由上方 mode 监听随后派发）
+                Scheme sel = (Scheme) schemeComboBox.getSelectedItem();
+                if (sel != null) {
+                    PluginManager.getInstance().dispatchHostEvent(
+                            HostEvent.schemeChanged(sel.getName(), safeSchemeType(sel)));
+                }
+            }
+            // 联动/保存等行为在 suppress 期间也照常执行（与现状一致），仅事件派发被屏蔽
             onSchemeChanged();
             updateModeSpecificButtons();
         });
@@ -231,6 +254,49 @@ public class NamePickerApp extends JFrame implements ModeHost {
         String selectedMode = (String) modeComboBox.getSelectedItem();
         if (selectedMode != null) {
             updateDisplayText();
+        }
+    }
+
+    /** Q3/F3：派发 MODE_CHANGED（displayName + 解析出的 modeId；解析失败时 modeId 为 null）。 */
+    private void dispatchModeChangedEvent() {
+        String selectedMode = (String) modeComboBox.getSelectedItem();
+        if (selectedMode == null) {
+            return;
+        }
+        PluginManager.getInstance().dispatchHostEvent(
+                HostEvent.modeChanged(modeIdOf(selectedMode), selectedMode));
+    }
+
+    /** 显示名 → modeId（内置经 ModeRegistry、插件经 PluginManager；失败回退 null）。 */
+    private String modeIdOf(String displayName) {
+        if (displayName == null) {
+            return null;
+        }
+        try {
+            ModeRegistry.ModeDefinition d = ModeRegistry.getByDisplayName(displayName);
+            if (d != null) {
+                return d.getModeId();
+            }
+        } catch (Throwable ignore) {
+            // 回退到插件查询
+        }
+        try {
+            ModeHandler h = PluginManager.getInstance().getPluginModeHandler(displayName);
+            if (h != null) {
+                return h.getModeId();
+            }
+        } catch (Throwable ignore) {
+            // 保持 null
+        }
+        return null;
+    }
+
+    private String safeSchemeType(Scheme scheme) {
+        try {
+            String t = scheme.getType();
+            return t != null ? t : "";
+        } catch (Throwable ignore) {
+            return "";
         }
     }
 
@@ -391,10 +457,57 @@ public class NamePickerApp extends JFrame implements ModeHost {
                 pluginMenu.add(infoItem);
             }
         }
+        // D10：加载历史非空（含被拒 jar）时，菜单尾提供“插件状态…”只读入口；无任何 jar 时零差异
+        List<PluginManager.LoadOutcome> history = PluginManager.getInstance().getLoadHistory();
+        if (!history.isEmpty()) {
+            if (!actions.isEmpty() || !infos.isEmpty()) {
+                pluginMenu.addSeparator();
+            }
+            JMenuItem statusItem = new JMenuItem("插件状态…");
+            statusItem.addActionListener(e -> showPluginStatusDialog());
+            pluginMenu.add(statusItem);
+        }
         pluginMenu.revalidate();
     }
 
-    /** 重建模式下拉框：内置（ModeRegistry）+ 已提交插件模式；尽量保持当前选中。 */
+    /** D10：插件加载状态只读对话框（成功清单 / 拒载清单 + 原因码与建议）。 */
+    private void showPluginStatusDialog() {
+        JDialog dialog = new JDialog(this, "插件状态", true);
+        dialog.setSize(560, 380);
+        dialog.setLocationRelativeTo(this);
+        StringBuilder sb = new StringBuilder();
+        List<PluginManager.LoadOutcome> history = PluginManager.getInstance().getLoadHistory();
+        for (PluginManager.LoadOutcome o : history) {
+            if (o.isLoaded()) {
+                sb.append("[加载成功] ").append(o.getJarName()).append("\n");
+                for (String info : o.getPluginInfos()) {
+                    sb.append("    - ").append(info).append("\n");
+                }
+            } else {
+                sb.append("[加载被拒] ").append(o.getJarName()).append("\n");
+                sb.append("    原因码: ").append(o.getReason() != null ? o.getReason().name() : "UNKNOWN").append("\n");
+                sb.append("    原因: ").append(o.getDetail() == null ? "" : o.getDetail()).append("\n");
+                if (o.getReason() != null) {
+                    sb.append("    建议: ").append(o.getReason().getSuggestion()).append("\n");
+                }
+            }
+            sb.append("    时间: ").append(java.text.SimpleDateFormat.getDateTimeInstance()
+                    .format(new java.util.Date(o.getTimestamp()))).append("\n\n");
+        }
+        JTextArea area = new JTextArea(sb.toString());
+        area.setEditable(false);
+        area.setFont(new Font("微软雅黑", Font.PLAIN, 12));
+        JScrollPane scroll = new JScrollPane(area);
+        dialog.add(scroll, BorderLayout.CENTER);
+        JButton close = new JButton("关闭");
+        close.addActionListener(e -> dialog.dispose());
+        JPanel bottom = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        bottom.add(close);
+        dialog.add(bottom, BorderLayout.SOUTH);
+        dialog.setVisible(true);
+    }
+
+    /** 重建模式下拉框：内置（ModeRegistry）+ 已提交插件模式；尽量保持当前选中。程序化刷新整体 suppress（Q3 不发 MODE_CHANGED）。 */
     private void refreshModeCombo() {
         String current = (String) modeComboBox.getSelectedItem();
         suppressModeEvent = true;
@@ -408,13 +521,13 @@ public class NamePickerApp extends JFrame implements ModeHost {
                     modeComboBox.addItem(name);
                 }
             }
+            if (current != null && modeContainsItem(current)) {
+                modeComboBox.setSelectedItem(current);
+            } else if (modeComboBox.getItemCount() > 0) {
+                modeComboBox.setSelectedIndex(0);
+            }
         } finally {
             suppressModeEvent = false;
-        }
-        if (current != null && modeContainsItem(current)) {
-            modeComboBox.setSelectedItem(current);
-        } else if (modeComboBox.getItemCount() > 0) {
-            modeComboBox.setSelectedIndex(0);
         }
         updateModeSpecificButtons();
         updateDisplayText();
@@ -463,6 +576,11 @@ public class NamePickerApp extends JFrame implements ModeHost {
         isPicking = true;
         pickButton.setText("停止");
 
+        // Q2：真实抽取（canPick 通过并启动滚动）才派发 PICK_STARTED
+        String modeDisplayName = (String) modeComboBox.getSelectedItem();
+        PluginManager.getInstance().dispatchHostEvent(HostEvent.pickStarted(HostEvent.Source.MAIN,
+                selectedScheme.getName(), safeSchemeType(selectedScheme),
+                modeIdOf(modeDisplayName), modeDisplayName));
         rollingPicker = new RollingPicker(buildSafeCandidateSupplier(handler), value -> displayLabel.setText(value));
         rollingPicker.start();
         //抽取日志记录（被废除）
@@ -504,6 +622,14 @@ public class NamePickerApp extends JFrame implements ModeHost {
             rollingPicker = null;
         }
         logResult();
+        // Q2：真实抽取结束定格 → PICK_FINISHED（结果取定格标签文本，与 logResult 同口径）
+        Scheme currentScheme = getCurrentScheme();
+        String modeDisplayName = (String) modeComboBox.getSelectedItem();
+        if (currentScheme != null && modeDisplayName != null) {
+            PluginManager.getInstance().dispatchHostEvent(HostEvent.pickFinished(HostEvent.Source.MAIN,
+                    currentScheme.getName(), safeSchemeType(currentScheme),
+                    modeIdOf(modeDisplayName), modeDisplayName, displayLabel.getText()));
+        }
     }
 
     /**
@@ -557,7 +683,7 @@ public class NamePickerApp extends JFrame implements ModeHost {
         }
 
         if (isFloatingBallVisible) {
-            // 已经可见，现在要隐藏
+            // 已经可见，现在要隐藏（dispose 在 FloatingBall 内派发 BALL_HIDDEN）
             isFloatingBallVisible = false;
             floatingButton.setText("悬浮球");
         } else {
@@ -567,6 +693,9 @@ public class NamePickerApp extends JFrame implements ModeHost {
                 floatingBall.setVisible(true);
                 isFloatingBallVisible = true;
                 floatingButton.setText("隐藏悬浮球");
+                // G2：悬浮球显示 → BALL_SHOWN（含初始 bounds）
+                PluginManager.getInstance().dispatchHostEvent(
+                        HostEvent.ballShown(floatingBall.getBounds()));
             } catch (Exception e) {
                 JOptionPane.showMessageDialog(this, "无法创建悬浮球: " + e.getMessage(),
                         "错误", JOptionPane.ERROR_MESSAGE);
@@ -609,6 +738,22 @@ public class NamePickerApp extends JFrame implements ModeHost {
 
     public Scheme getCurrentScheme() {
         return (Scheme) schemeComboBox.getSelectedItem();
+    }
+
+    @Override
+    public boolean isFloatingBallVisible() {
+        return isFloatingBallVisible;
+    }
+
+    @Override
+    public java.awt.Rectangle getFloatingBallBounds() {
+        FloatingBall b = floatingBall;
+        return (b != null && b.isDisplayable() && b.isVisible()) ? b.getBounds() : null;
+    }
+
+    @Override
+    public java.awt.Rectangle getMainWindowBounds() {
+        return getBounds();
     }
 
     public String getCurrentMode() {

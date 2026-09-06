@@ -12,7 +12,10 @@ import java.util.function.Function;
  * <p>
  * 有序结构：modeId → (displayName, schemeType, 工厂)。下拉框数据源 = 注册表显示名列表；
  * 代码内一律经 modeId / 注册表条目判断，不再 switch 中文字符串。
- * 本阶段仅内置三项；register / unregister 已就位，为 Stage3 插件动态注册模式预留路径。
+ * 本阶段仅内置三项；register / unregister 为 <b>宿主内部（package-private）</b>：仅本类静态初始化
+ * 使用，<b>不是插件 API</b>——插件模式一律经 PluginContext.registerModeHandler 由 PluginManager
+ * 独立维护（不进入本注册表），插件不得调用本类任何静态方法（宿主插件生态一期起收紧可见性并修正
+ * 早期“Stage3 插件注册入口”的错误表述）。
  * </p>
  * <p>
  * 工厂采用 Function&lt;ModeHost, ModeHandler&gt;（而非无参 Supplier）：Handler 构造需要
@@ -67,8 +70,8 @@ public final class ModeRegistry {
     private ModeRegistry() {
     }
 
-    /** 注册一个模式（Stage3 插件注册入口）。重复 modeId 或重复显示名视为注册冲突。 */
-    public static synchronized void register(ModeDefinition definition) {
+    /** 注册一个内置模式（仅本类静态初始化使用；宿主内部，非插件 API）。重复 modeId/displayName 视为冲突。 */
+    static synchronized void register(ModeDefinition definition) {
         if (BY_MODE_ID.containsKey(definition.getModeId())) {
             throw new IllegalStateException("模式已注册: " + definition.getModeId());
         }
@@ -82,8 +85,8 @@ public final class ModeRegistry {
         }
     }
 
-    /** 反注册（供插件卸载 / 演示清理；内置模式不建议反注册）。 */
-    public static synchronized void unregister(String modeId) {
+    /** 反注册内置模式（宿主内部，非插件 API；当前无外部调用，保留供宿主内部/测试清理）。 */
+    static synchronized void unregister(String modeId) {
         ModeDefinition definition = BY_MODE_ID.remove(modeId);
         if (definition != null) {
             DISPLAY_NAME_TO_MODE_ID.remove(definition.getDisplayName());

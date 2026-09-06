@@ -5,10 +5,11 @@ import com.randomnamepicker.core.LogManager;
 import com.randomnamepicker.core.NameManager;
 import com.randomnamepicker.core.SchemeManager;
 import com.randomnamepicker.model.Scheme;
+import java.awt.Rectangle;
 import java.awt.Window;
 
 /**
- * 模式宿主接口（Stage2 重构产物）。
+ * 模式宿主接口（Stage2 重构产物；宿主插件生态一期新增悬浮球只读几何查询）。
  * <p>
  * ModeHandler 通过本接口访问宿主能力，不再直接依赖 ui.NamePickerApp；
  * NamePickerApp 实现本接口。方法集按现有内置子类真实用法确定（getDataManager /
@@ -34,6 +35,21 @@ public interface ModeHost {
     LogManager getLogManager();
 
     /**
+     * 悬浮球当前是否可见（宿主插件生态一期 G1；只读快照，须 EDT 调用）。
+     */
+    boolean isFloatingBallVisible();
+
+    /**
+     * 悬浮球当前 bounds（宿主插件生态一期 G1；只读快照，须 EDT 调用；未建/不可见返回 null）。
+     */
+    Rectangle getFloatingBallBounds();
+
+    /**
+     * 宿主主窗 bounds（宿主插件生态一期 G1；只读快照，须 EDT 调用）。
+     */
+    Rectangle getMainWindowBounds();
+
+    /**
      * 父窗口（JOptionPane / JFileChooser 父窗口用；构造 NumberPicker / SeatPicker 时按需
      * 转型为 Frame —— 当前唯一宿主 NamePickerApp 即 JFrame）。
      * <p>
@@ -45,3 +61,4 @@ public interface ModeHost {
      */
     Window getOwner();
 }
+

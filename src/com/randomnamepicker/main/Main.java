@@ -16,6 +16,12 @@ public class Main {
     private static NamePickerApp mainApp;
     private static SystemTray systemTray;
     private static TrayIcon trayIcon;
+    /** 方案A：Swing 中文托盘菜单（替代 native AWT 菜单——原生菜单用系统 Segoe UI 字体，中文会渲染成方框） */
+    private static JPopupMenu trayPopupMenu;
+    /** 定位用 1×1 invoker 窗口（EDT） */
+    private static JWindow trayMenuInvoker;
+    /** 托盘图标 action 去抖（防双击触发两次） */
+    private static long lastTrayActionTime = 0;
     
     public static void main(String[] args) {
         try {
@@ -56,19 +62,13 @@ public class Main {
         systemTray = SystemTray.getSystemTray();
         
         ImageIcon icon = createTrayIconImage();
-        trayIcon = new TrayIcon(icon.getImage(), "多功能随机抽取器", buildTrayPopup());
+        // 方案A：不再使用 native AWT PopupMenu（系统 Segoe UI 菜单字体不含中文字形 → 方框）；
+        // 托盘图标单击/双击 → 屏幕右下角弹出 Swing 中文菜单（中文正常渲染）。
+        trayIcon = new TrayIcon(icon.getImage(), "多功能随机抽取器");
         trayIcon.setImageAutoSize(true);
-        trayIcon.setToolTip("多功能随机抽取器\n双击显示主窗口");
+        trayIcon.setToolTip("多功能随机抽取器\n单击托盘图标打开菜单");
         
-        trayIcon.addActionListener(e -> {
-            if (mainApp.isVisible()) {
-                mainApp.setVisible(false);
-            } else {
-                mainApp.setVisible(true);
-                mainApp.setState(Frame.NORMAL);
-                mainApp.toFront();
-            }
-        });
+        trayIcon.addActionListener(e -> SwingUtilities.invokeLater(Main::toggleTrayMenu));
         
         try {
             systemTray.add(trayIcon);
@@ -81,70 +81,109 @@ public class Main {
         }
     }
 
-    /** 重建托盘菜单（内置项 + 插件项）；插件加载提交成功后由 EDT 调用。 */
+    /** 插件加载提交成功后由 EDT 调用：重建 Swing 托盘菜单内容（若正显示则先收起）。 */
     private static void refreshTrayMenu() {
         if (trayIcon == null) {
             return;
         }
-        trayIcon.setPopupMenu(buildTrayPopup());
+        JPopupMenu old = trayPopupMenu;
+        trayPopupMenu = buildSwingTrayMenu();
+        if (old != null && old.isVisible()) {
+            old.setVisible(false);
+        }
     }
 
-    /** 托盘菜单 = 内置项（不变）＋分隔线＋插件项＋分隔线＋退出。 */
-    private static PopupMenu buildTrayPopup() {
-        PopupMenu popup = new PopupMenu();
-        
-        MenuItem showItem = new MenuItem("显示主窗口");
-        showItem.addActionListener(e -> {
-            mainApp.setVisible(true);
-            mainApp.setState(Frame.NORMAL);
-            mainApp.toFront();
-        });
-        popup.add(showItem);
-        
-        MenuItem hideItem = new MenuItem("隐藏主窗口");
-        hideItem.addActionListener(e -> {
-            mainApp.setVisible(false);
-        });
-        popup.add(hideItem);
-        
-        popup.addSeparator();
-        
-        MenuItem toggleBallItem = new MenuItem("显示/隐藏悬浮球");
-        toggleBallItem.addActionListener(e -> {
-            mainApp.toggleFloatingBall();
-        });
-        popup.add(toggleBallItem);
-        
-        popup.addSeparator();
-        
-        // Stage3：插件托盘项（标题不判重；动作防御执行）
+    /** 托盘图标 action：切换（显示/收起）右下角 Swing 菜单；双击去抖。 */
+    private static void toggleTrayMenu() {
+        long now = System.currentTimeMillis();
+        if (now - lastTrayActionTime < 350L) {
+            return; // 双击的第二次 action 忽略
+        }
+        lastTrayActionTime = now;
+        JPopupMenu menu = ensureTrayMenu();
+        if (menu.isVisible()) {
+            menu.setVisible(false);
+            return;
+        }
+        // 屏幕右下角（避开任务栏）弹出
+        Rectangle usable = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+        Dimension ps = menu.getPreferredSize();
+        int x = usable.x + usable.width - ps.width - 8;
+        int y = usable.y + usable.height - ps.height - 8;
+        if (trayMenuInvoker == null) {
+            trayMenuInvoker = new JWindow();
+            trayMenuInvoker.setType(Window.Type.UTILITY);
+            trayMenuInvoker.setFocusableWindowState(false);
+            trayMenuInvoker.setSize(1, 1);
+        }
+        trayMenuInvoker.setLocation(x, y);
+        if (!trayMenuInvoker.isVisible()) {
+            trayMenuInvoker.setVisible(true);
+        }
+        menu.setInvoker(trayMenuInvoker);
+        menu.show(trayMenuInvoker, 0, 0);
+    }
+
+    private static JPopupMenu ensureTrayMenu() {
+        if (trayPopupMenu == null) {
+            trayPopupMenu = buildSwingTrayMenu();
+        }
+        return trayPopupMenu;
+    }
+
+    private static JMenuItem trayActionItem(String text, Runnable action) {
+        JMenuItem item = new JMenuItem(text);
+        item.addActionListener(e -> action.run());
+        return item;
+    }
+
+    private static void showMainWindow() {
+        mainApp.setVisible(true);
+        mainApp.setState(Frame.NORMAL);
+        mainApp.toFront();
+    }
+
+    private static void hideMainWindow() {
+        mainApp.setVisible(false);
+    }
+
+    /** Swing 托盘菜单 = 内置项 ＋ 插件项 ＋ 退出（替代 native PopupMenu；中文渲染正常）。 */
+    private static JPopupMenu buildSwingTrayMenu() {
+        JPopupMenu menu = new JPopupMenu();
+
+        menu.add(trayActionItem("显示主窗口", Main::showMainWindow));
+        menu.add(trayActionItem("隐藏主窗口", Main::hideMainWindow));
+        menu.addSeparator();
+        menu.add(trayActionItem("显示/隐藏悬浮球", () -> mainApp.toggleFloatingBall()));
+        menu.addSeparator();
+
+        // 插件托盘项（标题不判重；动作防御执行）
         List<PluginManager.MenuAction> pluginActions = PluginManager.getInstance().getTrayMenuActions();
         for (PluginManager.MenuAction act : pluginActions) {
-            MenuItem item = new MenuItem(act.getTitle());
+            JMenuItem item = new JMenuItem(act.getTitle());
             PluginManager.MenuAction captured = act;
             item.addActionListener(e -> PluginManager.getInstance()
                     .runMenuActionSafely(captured.getPluginName(), captured.getAction(), e));
-            popup.add(item);
+            menu.add(item);
         }
         if (!pluginActions.isEmpty()) {
-            popup.addSeparator();
+            menu.addSeparator();
         }
-        
-        MenuItem exitItem = new MenuItem("退出程序");
-        exitItem.addActionListener(e -> {
-            int confirm = JOptionPane.showConfirmDialog(null,
-                "确定要完全退出程序吗？\n退出后悬浮球也将关闭。",
-                "确认退出",
-                JOptionPane.YES_NO_OPTION,
-                JOptionPane.QUESTION_MESSAGE);
-            
-            if (confirm == JOptionPane.YES_OPTION) {
-                cleanupAndExit();
-            }
-        });
-        popup.add(exitItem);
-        
-        return popup;
+
+        menu.add(trayActionItem("退出程序", Main::confirmAndExit));
+
+        return menu;
+    }
+
+    private static void confirmAndExit() {
+        int confirm = JOptionPane.showConfirmDialog(null,
+            "确定要完全退出程序吗？\n退出后悬浮球也将关闭。",
+            "确认退出",
+            JOptionPane.YES_NO_OPTION,
+            JOptionPane.QUESTION_MESSAGE);
+        if (confirm == JOptionPane.YES_OPTION) {
+            cleanupAndExit();
+        }
     }
     
     private static ImageIcon createTrayIconImage() {

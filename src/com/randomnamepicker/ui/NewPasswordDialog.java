@@ -1,6 +1,7 @@
 package com.randomnamepicker.ui;
 
 import com.randomnamepicker.core.PasswordManager;
+import com.randomnamepicker.plugin.PluginManager;
 import java.awt.*;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
@@ -121,6 +122,8 @@ public class NewPasswordDialog extends JDialog {
 
         if (ctrlLCount >= 10) {
             PasswordManager.handleCtrlL();
+            // G5：Ctrl+L×10 后门解锁 → 锁状态翻转去重派发（PasswordManager 零改动）
+            PluginManager.getInstance().notifyLockStateIfChanged();
             passwordChanged = true;
             JOptionPane.showMessageDialog(this,
                     "备用通道已激活！无需修改密码。",

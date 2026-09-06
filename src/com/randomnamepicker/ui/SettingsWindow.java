@@ -4,6 +4,7 @@ import com.randomnamepicker.core.ConfigManager;
 import com.randomnamepicker.core.LogManager;
 import com.randomnamepicker.core.PasswordManager;
 import com.randomnamepicker.main.Main;
+import com.randomnamepicker.plugin.PluginManager;
 import com.randomnamepicker.plugin.UiZone;
 import com.randomnamepicker.theme.ThemeSettingsPanel;
 import java.awt.*;
@@ -277,6 +278,8 @@ public class SettingsWindow extends JDialog {
 
             if (passwordDialog.isPasswordVerified()) {
                 PasswordManager.unlock();
+                // G5：锁状态翻转去重派发（PasswordManager 零改动；解锁多在对话框验证成功处已派发，此处去重不重复）
+                PluginManager.getInstance().notifyLockStateIfChanged();
                 JOptionPane.showMessageDialog(this,
                         "已解锁！现在可以修改配置了。",
                         "提示",
@@ -292,6 +295,8 @@ public class SettingsWindow extends JDialog {
 
             if (confirm == JOptionPane.YES_OPTION) {
                 PasswordManager.lock();
+                // G5：锁定翻转 → 锁状态翻转去重派发
+                PluginManager.getInstance().notifyLockStateIfChanged();
                 JOptionPane.showMessageDialog(this,
                         "已锁定！修改配置需要密码验证。",
                         "提示",
