@@ -1,0 +1,34 @@
+﻿# V1.1.0 交接包说明（打包于 2026-09-05）
+
+本包是当前工作区（RandomNamePicker 多功能随机抽取器）的完整交接快照，供下一位开发者全新接手。
+
+## 阅读顺序（先读这 3 份）
+1. README.txt —— 项目速览与开发进度（§0 阶段表已更新至 Stage3 完成）
+2. 交接说明.md —— 最新一轮（背景主题等）的交接要点、构建运行、验收状态、已知边界
+3. Stage1/2/3_交付报告.md —— 各阶段执行与验收明细
+其余《任务书》《开发方案》.md 记录插件 UI 槽一/二期、正计时子球、背景主题的决策过程，按需阅读。
+
+## 包内结构（镜像仓库根）
+- src/                         当前全部源码（42 个 .java；core/model/ui/mode/main/floating/plugin/theme）
+- tools/                       build.bat（argfile 递归编译）、Creator.bat、LogClearer.bat
+- examples/                    插件样例源码与 jar（plugin-example / plugin-qa / plugin-timer / plugin-ui-zone-demo）
+- plugins/                     运行时插件目录（已放置 CountUpTimerBall.jar、ExamplePlugin.jar）
+- theme_shots/                 背景主题复验截图（png）
+- .stage1/.stage2/.stage3/.pluginui/.pluginui2_originals/   各阶段改动前的代码备份（回归对照）
+- ONLY ADMIN/                  历史压缩备份（V4.1.2代码备份.zip、插件实现代码备份1.zip）
+- RandomNamePicker.jar         当前构建产物（打包前已对 src 全量 javac 自检通过：67 个 class）
+- RandomNamePicker.jar.stage1bak  Stage1 迁移版 jar
+- manifest.txt                 Main-Class: com.randomnamepicker.main.Main
+
+## 未包含（有意排除，均为可再生或无关内容）
+data/、log/（运行数据与日志，程序启动自动重建）、out/（编译中间产物）、
+.sp-review/（某执行方下载的评审工具缓存，约 35MB，与本项目无关）、n.txt（临时名单样例）。
+
+## 构建与运行（详见 README/交接说明）
+tools\build.bat                # 编译并打包 RandomNamePicker.jar（需 JDK；javac 不支持 **，脚本已用 argfile）
+java -jar RandomNamePicker.jar # 工作目录=包根，首次运行自动创建 data/ log/；插件放 plugins/
+
+## 下一步建议
+- 按 README §0 的 Stage4+（jlink 免安装打包等）规划推进；
+- 遵守 README §6"改代码前必读"（死代码与已知坑勿顺手修）；
+- 每完成一轮，同步更新 README §0 进度表与《交接说明.md》。

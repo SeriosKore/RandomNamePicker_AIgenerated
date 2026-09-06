@@ -1,0 +1,55 @@
+你是一名资深 Java 重构工程师。现在需要对一个 Java Swing 桌面程序进行包结构迁移，将默认包下的所有类迁移到正式包中。请严格按以下要求执行，输出完整的修改后源码和编译说明。
+
+【项目背景】
+项目名：RandomNamePicker，纯 Java Swing 程序，Java 8+，无第三方依赖，源码 UTF-8。
+事实澄清（以真实源码为准，先读源码核对再动手）：
+- 源码共有 23 个 .java 文件，但类总数是 26 个——因为 SchemeManager.java 一个文件内还定义了三个模型类 Scheme、NumberRange、SeatConfig（均在默认包，无 package 声明）。
+- 26 个类完整名单：Main, NamePickerApp, ModeHandler, NameListModeHandler, NumberModeHandler, SeatModeHandler, NameManager, SchemeManager, DataManager, EncryptionUtil, ConfigManager, PasswordManager, LogManager, Scheme, NumberRange, SeatConfig, ConfigWindow, SchemeManagerDialog, NumberPicker, SeatPicker, SettingsWindow, PasswordDialog, OldPasswordDialog, NewPasswordDialog, ChangePasswordDialog, FloatingBall。
+- 所有类互相裸引用（默认包内无 import）。迁移过程中除下述必要修改外，不得增删任何类（26 类数目保持）。
+
+【迁移目标】
+1. 目标包结构（根包 com.randomnamepicker）：
+   - com.randomnamepicker.core：NameManager, SchemeManager, DataManager, EncryptionUtil, ConfigManager, PasswordManager, LogManager
+   - com.randomnamepicker.model：Scheme, NumberRange, SeatConfig —— 必须从 SchemeManager.java 中拆出为三个独立 .java 文件
+   - com.randomnamepicker.ui：NamePickerApp, ConfigWindow, SchemeManagerDialog, NumberPicker, SeatPicker, SettingsWindow, PasswordDialog, OldPasswordDialog, NewPasswordDialog, ChangePasswordDialog
+   - com.randomnamepicker.mode：ModeHandler（抽象类）, NameListModeHandler, NumberModeHandler, SeatModeHandler
+   - com.randomnamepicker.main：Main
+   - com.randomnamepicker.floating：FloatingBall
+2. 为每个 .java 文件添加 package 声明，并为所有跨包引用添加必要的 import 语句。
+3. 【可见性规则——必读，缺了会编译失败】默认包中 package-private 等于全局可见；拆到不同子包后，跨包引用必须满足可见性，因此：
+   - 凡被其他子包引用的类，必须把类声明为 public（本项目中实际为全部 26 个类，含拆出的 Scheme/NumberRange/SeatConfig、抽象类 ModeHandler）。
+   - 被跨包调用的构造器、方法、字段，源码中绝大多数已是 public；若有 package-private 却要被其他包调用的成员，一并改为 public。
+   - 允许的修改仅限三类：添加 package 声明、添加 import、添加上述最小必要的 public 修饰。除此之外不得改动任何方法体、方法签名、字段、注释、字符串字面量、死代码、已知不一致点。
+4. 保留清单（原样迁移，不得顺手修复）：
+   - ChangePasswordDialog（无引用的死代码）照搬；
+   - SchemeManager 删除方案时用未清洗的原始方案名拼文件路径（与 DataManager 落盘清洗名不一致）——保留；
+   - 其余 README/注释中记载的原坑——一律保留原样。
+5. 同步更新构建相关文件（属于本次交付的一部分，否则项目无法构建/启动）：
+   - 根目录 manifest.txt 内容改为：Main-Class: com.randomnamepicker.main.Main
+   - tools\build.bat 的编译源文件方式必须改为"递归收集"（见下），打包命令保持 jar cfm RandomNamePicker.jar manifest.txt -C out . 不变。
+
+【编译命令（Windows 关键注意，勿用 ** 通配）】
+Windows cmd 不做通配符展开，javac 只支持"单个目录内"的 *.java 通配，不支持 ** 递归通配（例如 src\com\randomnamepicker\**\*.java 在 Windows 下无法编译）。以下两种方式任选其一（推荐方式 A）：
+方式 A（argfile，最稳，与目录嵌套深度无关）：
+   dir /s /b src\*.java > sources.txt
+   javac -encoding UTF-8 -d out @sources.txt
+方式 B（本迁移无深层嵌套时逐目录通配）：
+   javac -encoding UTF-8 -d out src\com\randomnamepicker\core\*.java src\com\randomnamepicker\model\*.java src\com\randomnamepicker\ui\*.java src\com\randomnamepicker\mode\*.java src\com\randomnamepicker\main\*.java src\com\randomnamepicker\floating\*.java
+打包：
+   jar cfm RandomNamePicker.jar manifest.txt -C out .
+（jar 前必须确认 manifest.txt 已更新为 com.randomnamepicker.main.Main；若沿用旧 manifest，启动会报"找不到主类 Main"）
+
+【输出要求】
+1. 迁移后的完整目录树：每个 .java 的目标路径、package 声明、主要新增 import 摘要。
+2. 全部 26 个类逐个给出完整文件内容（package、import、public 无遗漏）。
+3. 给出可直接在 Windows 命令行执行的编译命令（上述二选一）与打包命令。
+4. 给出更新后的 manifest.txt 全文与更新后的 tools\build.bat 全文（build.bat 中 javac 部分用方式 A 或方式 B 实现）。
+5. 迁移后自查清单：
+   - grep 确认 src 根目录（及任何非目标子包目录）不再残留 .java 文件；每个 .java 首行是 package 声明；
+   - 全量编译零错误；
+   - 运行后行为与迁移前一致：首次运行创建 data/ log/ 目录、主窗口标题“多功能随机抽取器”、托盘/悬浮球/加密三副本自愈/锁机制均正常。
+
+【验收标准】
+- 编译零错误（使用修正后的编译命令，而不是 ** 通配）。
+- 运行时行为与迁移前一致（可对照迁移前一次运行产生的 data/ 与 log/Modifylog.txt 内容）。
+- 不引入任何新依赖、不新增/删除任何类（26 类数目不变）。

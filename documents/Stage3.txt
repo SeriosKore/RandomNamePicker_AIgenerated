@@ -1,0 +1,117 @@
+你是一名 Java 插件系统专家。现在需要为已完成 Stage1（包迁移）与 Stage2（模式策略重构）的 RandomNamePicker 程序添加插件化支持，允许第三方开发者通过插件 jar 扩展功能（新增抽取模式、主窗/托盘/悬浮球菜单项）。请严格按以下要求实现。本文档已按 2026-09-04 可行性分析、组长质询评审与用户拍板决策修订；先通读"§0 已确认决策"与"§1 当前基础（与真实源码对齐）"，动手前再核对源码。
+
+【§0 已确认决策（2026-09-04，不得再更改）】
+- D0.1 插件宿主来源＝方案 A：`PluginContext` 除服务访问器外，额外提供 `ModeHost getModeHost()`；对外只暴露 `ModeHost` 接口类型（不是 ui.NamePickerApp 类），插件用 `new XxxModeHandler(ctx.getModeHost())` 构造自己的 Handler。
+- D0.2 主窗始终创建"插件"菜单；无插件时为**空菜单**（空 JMenu 可见）；该形态须过 UI 回归测试。
+- D0.3 模式冲突规则：插件的 modeId 或 displayName 与内置或**更早提交成功**的插件重复时，冲突方（后加入者）的整个 jar 被原子拒载并记日志；内置模式与内置菜单项无任何可移除路径。**菜单项标题一律不判重**：任何 addXxxMenuAction 无条件追加，同名标题各自独立成项、独立回调（含同一插件内重复添加）。
+- D0.4 不做运行中动态卸载/热插拔：插件在启动阶段一次性加载；退出（Main.cleanupAndExit）时对已提交插件全量 onUnload + 关闭全部 URLClassLoader。悬浮球每次**新建实例**时按 PluginManager 当前（已提交）列表生成菜单即可（悬浮球开关即重建实例，无需 PopupMenuListener 强约束）。
+- D0.5 防御范围含抽取回调：onLoad / onUnload / 菜单动作 **以及插件的 canPick() 与 nextCandidate() 调用点**都要 try/catch（含 LinkageError 等可捕获 Error 边界），坏插件不得拖死主程序或 EDT；抽取回调失败时按模式回退显示占位文本并记日志。
+- D0.6 主窗"插件"菜单内容 = 插件功能项（提交顺序）＋分隔线＋只读展示每个已提交插件"名称 版本"（禁用态），便于验收与排查。
+- D0.7 示例插件工程放独立目录 `examples/plugin-example/`（不进 src/、不打进主 jar），产出 `plugins/ExamplePlugin.jar` 供验收；坏插件验收样例另见 §5/§7。
+- D0.8 `PluginContext.getDataManager()` 返回 **NamePickerApp 自持的 dataManager 实例**（Stage2 D2 已建字段）。文档必须声明：DataManager 实例为文件级操作、均指向同一 `data/` 根，主窗自持实例与 NameManager/SchemeManager 各自私有实例功能等价；插件不得自行 new DataManager。禁止为共享单例重构 core。
+- D0.9 **一个 jar 允许多个 Plugin 实现类**：同一 jar 内多个候选类 = 多个逻辑插件，共享同一 URLClassLoader；整个 jar 为一个加载/提交事务单元。
+- D0.10 **加载与失败粒度＝jar 原子**：jar 内任一类条目不可加载/链接失败（缺依赖、VerifyError 等）、任一候选类实例化失败、任一候选 onLoad 抛异常、或提交阶段任一注册冲突（撞内置 / 撞更早提交的插件 / 同 jar 候选互撞）→ **整个 jar 原子拒载**并记日志（操作码建议 `PLUGIN_LOAD_ERROR`）。已成功 onLoad 的同 jar 候选补调 `onUnload()`，丢弃其全部暂存，UI/全局注册表无任何残留；拒载不中断其它 jar。
+- D0.11 **暂存-提交事务（消除 onLoad 半状态）**：`PluginContext` 的 registerModeHandler/addXxxMenuAction 在插件 onLoad 期间**只写入该插件的 pending（待提交）区**，不触碰任何 UI、下拉框、注册表；jar 内全部候选 onLoad 均正常返回后，统一执行 commit：冲突预检（范围含内置、更早提交的插件、同 jar 候选互撞）→ 通过则一次性生效并仅在此后刷新 UI 一次；任一失败路径 = 丢弃 pending + 补 onUnload。保证"全或无"。
+- D0.12 按钮可选化＝契约不动 + UI 隐藏：**保持 ModeHandler 的 8 个抽象方法不变**（getButton1Text/getButton2Text/handleButton1Click/handleButton2Click 仍抽象）；约定插件模式不需要附加按钮时 `getButton1Text()/getButton2Text()` 返回 `null`，click 方法给空实现；`NamePickerApp.updateModeSpecificButtons` 对 null 或空串文本**隐藏对应按钮**（第 4/6 格留空，3×2 布局与内置模式不受影响）。内置三模式行为不变。
+- D0.13 **加载线程＝后台线程**：plugins 目录扫描、jar 打开、URLClassLoader 创建、类条目加载判定、候选实例化与 onLoad（只写线程安全 pending、不触 UI）全部在**后台线程**执行；全部 jar 处理完后 `SwingUtilities.invokeLater` 回到 EDT 一次性 commit + 刷新（主窗插件菜单与模式下拉框、托盘菜单重建）。主窗先显示内置 UI，插件内容在极短时间内"空→就绪"，期间 UI 不阻塞。PluginContext 各方法须线程安全（pending 容器同步保护）。
+- D0.14 坏插件验收 = 三类失败样例全覆盖（构造法见 §5/§7）：(a) 无参构造抛异常；(b) onLoad 抛异常；(c) 注册冲突（如 modeId=`name_list` 或 displayName=`名字列表模式`）；每类都验证"好插件不受影响、无残留半状态"；类条目加载期失败按 D0.10 整 jar 拒载。
+
+【§1 当前基础（与真实源码对齐，2026-09-04 核对）】
+- 包结构：`com.randomnamepicker.{core,model,ui,mode,main,floating}`，29 个 .java，无第三方依赖，Java 8+ Swing，源码 UTF-8；编译用 argfile 方式 A（`dir /s /b src\*.java > sources.txt` + `javac -encoding UTF-8 -d out @sources.txt`）；打包 `jar cfm RandomNamePicker.jar manifest.txt -C out .`。
+- 模式策略层（Stage2 产物）：
+  - `mode.ModeHandler`（抽象）构造参数为 `mode.ModeHost`；8 个抽象方法：`getModeId()/getDisplayName()/canPick()/nextCandidate()（返回 Supplier<String>）/getButton1Text()/getButton2Text()/handleButton1Click()/handleButton2Click()`。canPick：null=可抽取；非 null=不可抽取原因（主窗弹窗文案；悬浮球按 modeId 映射短文本，未知模式回退显示返回值）。
+  - `mode.ModeHost` 接口：`getCurrentScheme()/getNameManager()/getSchemeManager()/getDataManager()/getLogManager()/getOwner()`；`getOwner()` 返回 `java.awt.Window`——**任何 JFrame/Window 宿主不得以 Frame 协变重写 Window.getOwner()**（自引用会使模态对话框白屏死锁，见 README §6-13）。
+  - `mode.ModeRegistry`：有序 `modeId→(displayName, schemeType, 工厂 Function<ModeHost,ModeHandler>)`，仅含内置三项（静态块注册）；主窗经其解析内置 Handler。插件模式**不进 ModeRegistry**，由 PluginManager 单独维护（D0.11 提交后可见）。
+  - `ui.RollingPicker`：通用滚停引擎（Supplier 候选 + Consumer 显示回调 + 间隔默认 50ms + Integer maxTicks；null=无限，20=自停）；截断/格式化由调用方回调处理。
+- 主窗 `ui.NamePickerApp`：**implements ModeHost**；无任何 JMenuBar；顶部为 FlowLayout；模式下拉框构造时按注册表建一次；`updateModeSpecificButtons/getCurrentModeHandler/updateDisplayText` 目前只认 ModeRegistry；`onSchemeChanged` 仅在 schemeType 有映射时自动拨模式。
+- 托盘：`main.Main.setupSystemTray()` 用 `java.awt.PopupMenu` 构造一次；唯一退出点 `Main.cleanupAndExit()`（托盘与主窗关闭共用），先移托盘再 `System.exit(0)`。
+- 悬浮球 `floating.FloatingBall`：右键菜单在构造时生成一次；每次开关悬浮球都是新建实例。
+- 服务形态（勿臆断）：`NameManager/SchemeManager/DataManager` 为**实例类**（NamePickerApp 构造时各自 new；DataManager 无共享单例，NamePickerApp 自持一份、两管理器各私有一份，文件级等价，见 D0.8）；`LogManager/ConfigManager/PasswordManager` 为静态工具（LogManager.log 全静态）。
+- 其余（加密三副本、锁/密码/Ctrl+L 后门、托盘、开机自启、日志）以 README.txt §2-§5 为准，本阶段不得改动其行为。
+
+【§2 目标与总体设计】
+1. 新增 `com.randomnamepicker.plugin` 包：接口 `Plugin`、`PluginContext` 与加载管理器 `PluginManager`（进程内单例；PluginContext 实现类可放 PluginManager 内部或独立）。
+2. 加载目录：默认 `plugins/`，位于程序运行目录 `user.dir`（与 jar/exe 同级的运行目录）；不存在则创建；取全部 `*.jar` 并按文件名排序保证加载顺序稳定。
+3. 对每个 jar（后台线程，D0.13）：以宿主应用类加载器为 parent 的 `URLClassLoader`（parent-first）；遍历 jar 全部条目，跳过 `META-INF/versions/`、`module-info.class` 与非 .class；对每个 .class 条目 `Class.forName(名, false, loader)`——**任一条目加载失败即整 jar 失败（D0.10）**；判定：`Plugin` 实现类、非抽象、public、有无参构造 → 收集为候选。
+4. 候选执行（D0.10/D0.11）：jar 内全部候选先实例化（失败→整 jar 拒载）→ 逐个 `onLoad(ctx)`（注册只进该插件 pending）→ 全部成功后统一 commit + 冲突预检 → 全通过才生效并刷新 UI；失败路径丢弃 pending、对已成功 onLoad 的候选补 onUnload，整 jar 拒载记日志（操作码 `PLUGIN_LOAD_ERROR`）。
+5. 防御：所有插件回调与抽取调用点 try/catch（D0.5）。
+6. 生命周期：后台 `loadAll()` 完成后 EDT 一次性提交与刷新（主窗插件菜单、模式下拉框、托盘菜单重建）；`shutdown()` 在 `Main.cleanupAndExit()` 内调用：逐插件 `onUnload`（try/catch）→ 关闭全部 URLClassLoader → 清空注册。运行期间不重扫/热插拔（D0.4）。
+7. 插件模式不进入 ModeRegistry；下拉框 = 内置（注册表）+ 已提交插件 handler（内置在前、插件按提交序），主窗解析内置仍走 ModeRegistry、插件走 PluginManager（D0.11 后）。
+
+【§3 接口清单】
+`plugin.Plugin`（com.randomnamepicker.plugin）：
+- `String getName();`
+- `String getVersion();`
+- `void onLoad(PluginContext context);`
+- `void onUnload();`
+
+`plugin.PluginContext`（同包）：
+- 注册能力（**均为暂存语义（D0.11）：onLoad 期间只写入本插件 pending，提交成功后才对外可见；可重复调用，菜单标题一律不判重（D0.3）**）：
+  `void registerModeHandler(ModeHandler handler);`（插件先用 `ctx.getModeHost()` 构造 handler 实例再注册；modeId/displayName 冲突在提交阶段判重并整 jar 拒载）
+  `void addMainMenuAction(String title, ActionListener action);`
+  `void addTrayMenuAction(String title, ActionListener action);`
+  `void addFloatingBallMenuAction(String title, ActionListener action);`
+- 服务访问：`NameManager getNameManager(); SchemeManager getSchemeManager(); DataManager getDataManager(); LogManager getLogManager(); ModeHost getModeHost();`
+  `void log(String detail, String opCode);`
+  `getDataManager()` 返回主窗自持实例（D0.8）。
+- 约束：**不暴露** PasswordManager、ConfigManager、FloatingBall、NamePickerApp（ModeHost 接口除外）；对外返回的可变集合一律只读包装或拷贝；实现须线程安全（pending 容器同步），供后台线程 onLoad 调用。
+
+`plugin.PluginManager`（同包，进程内单例，可含内部 PluginContext 实现类）：
+- `init(PluginContext hostContext)`：绑定宿主（主窗）上下文与三个菜单/下拉框 sink（主窗、托盘、悬浮球查询入口）。
+- `loadAll()`：后台线程执行 §2-3/4，完成后 EDT 一次性 commit + 刷新（主窗 `refreshPluginMenu()`、`refreshModeCombo()`、托盘 `rebuildTrayMenu()`）。
+- `shutdown()`：§2-6。
+- 查询接口（只读）：已提交插件（名称/版本，按提交序）、三类菜单项、已提交插件模式 handler 列表（displayName/modeId）。内置保护：无任何可移除内置模式/菜单项的路径；判重同时比对 ModeRegistry 内置项与已提交插件项。
+- 提交与冲突预检在 EDT 统一执行（D0.13），预检规则见 D0.3/D0.10。
+
+【§4 主程序集成点修改（仅涉及下列文件的相关部分）】
+1. `ui.NamePickerApp`（implements ModeHost）：
+   - 新增 `JMenuBar` + `JMenu("插件")`：**无插件为空菜单可见（D0.2）**；插件提交后一次填充＝插件功能项（提交序，分隔线）+ 只读"名称 版本"区（D0.6）。提供 `refreshPluginMenu()`。
+   - 模式下拉框＝内置（ModeRegistry）＋已提交插件 displayName（内置在前、插件按提交序）；提供 `refreshModeCombo()`：重建项并尽量保持当前选中（按 displayName）。
+   - `updateModeSpecificButtons()/getCurrentModeHandler()/updateDisplayText()`：内置走 ModeRegistry、插件走 PluginManager 解析；插件按钮文本为 null/空 → 隐藏对应按钮、格子留空（D0.12）；内置行为不变。
+   - `onSchemeChanged` 联动仅针对有 schemeType 映射的内置模式；插件模式无映射，切换方案不得抢走插件模式的选中（UI 确认）。
+   - 防御：插件 handler 的 `canPick()/nextCandidate()` 调用点 try/catch（D0.5），失败回退占位显示并复位、记日志。
+2. `main.Main`：
+   - 启动时序（EDT）：`new NamePickerApp()` → 以主窗构造 PluginContext 并 `PluginManager.init` → 主窗 `setVisible(true)`（先显示内置 UI）→ **后台线程** `PluginManager.loadAll()` → 完成后 EDT 刷新主窗菜单/下拉框并 `rebuildTrayMenu()`（内置项 + 插件项 + 分隔，重建后 `trayIcon.setPopupMenu(新菜单)`）；托盘初始化可延后到刷新后一次完成。
+   - `cleanupAndExit()`：先 `PluginManager.shutdown()`，再移除托盘并 `System.exit(0)`。
+   - 托盘 AWT 菜单动作执行时 try/catch（D0.5）。
+3. `floating.FloatingBall`：构造菜单时追加读取 PluginManager 已提交的悬浮球插件项（D0.4），追加在"设置"与"关闭"之间（分隔线后）；菜单动作 try/catch；插件模式短文本映射：无内置映射回退 canPick() 返回值（Stage2 已如此）。悬浮球若创建于插件提交前（极短窗口），其菜单不含插件项——重开悬浮球即更新（D0.4 语义，文档注明）。
+
+【§5 示例与坏样例插件工程说明】
+- 目录约定：`examples/plugin-example/`（示例，D0.7）与 `examples/plugin-qa/`（验收坏样例源码；两者均不进 src/、不打进主 jar）。
+- `ExamplePlugin`：实现 `Plugin`；`getName()="ExamplePlugin"`、`getVersion()="1.0"`；`onLoad(ctx)` 中：
+  * 以 `ctx.getModeHost()` 构造并注册内置式 Handler 子类：modeId=`example_plugin`、displayName=`示例插件模式`；`canPick()` 返回 null；`nextCandidate()` 返回固定串 `"Hello from Plugin"`；**无附加按钮：`getButton1Text()/getButton2Text()` 返回 null、click 空实现（D0.12，主窗对应按钮隐藏）**；实现全部 8 个抽象方法。
+  * 三个菜单各添加一项"关于插件"（点击弹 JOptionPane，父窗口 `ctx.getModeHost().getOwner()`，显示名称/版本）。
+  * `onUnload()`：记日志。
+- 打包（写入交付说明）：以**主 jar 或主工程 out 目录**作 API 类路径编译，例如
+  `javac -encoding UTF-8 -cp <主 jar 或 out 路径> -d build examples/plugin-example/ExamplePlugin.java`
+  `jar cf ExamplePlugin.jar -C build .`，产物放 `plugins/ExamplePlugin.jar`。
+- **插件 jar 只允许含插件自身类与资源，禁止包含 com/randomnamepicker/**（API 类由宿主 parent-first 提供）；加载器不做强制检查，但文档与示例必须遵守并强调。**
+- 坏样例构造法（§7 验收用，各产出一个 jar 放入 plugins/ 单独验证）：
+  (a) `BadCtorPlugin`：public 无参构造器抛 RuntimeException；
+  (b) `BadOnLoadPlugin`：构造正常、`onLoad` 抛 RuntimeException；
+  (c) `ConflictPlugin`：`onLoad` 注册 modeId=`name_list` 或 displayName=`名字列表模式` 的 Handler（与内置冲突）。
+  编译打包方式同示例。可另加：缺依赖类条目（引用不存在类）验证类加载失败路径（D0.10）。
+
+【§6 输出要求】
+1. `plugin/Plugin.java`、`plugin/PluginContext.java`、`plugin/PluginManager.java` 完整代码（PluginContext 实现可内置于 PluginManager）。
+2. `NamePickerApp`、`Main`、`FloatingBall` 中与插件集成相关的修改（建议给完整文件）。
+3. `examples/plugin-example/ExamplePlugin.java` 完整代码 + 打包命令/说明（含 API jar 来源、禁含 API 类约束）；`examples/plugin-qa/` 三个坏样例源码。
+4. 说明：加载流程（后台扫描→实例化→onLoad 暂存→EDT 提交/冲突预检→刷新）与失败/回滚路径；插件菜单刷新调用点（refreshPluginMenu/rebuildTrayMenu/悬浮球何时读列表）；getDataManager 实例说明（D0.8）。
+5. 手动测试清单（对应 §7 逐条可勾选，含"无插件回归"与"有插件/坏插件验收"两组）。
+
+【§7 验收标准】
+- 编译零错误（方式 A）；无第三方依赖新增。
+- **无插件回归（先于插件测试）**：plugins/ 缺失或为空时行为与 Stage2 一致（跑 Stage2 手动清单中抽取/配置/子窗口/锁定条目）；主窗顶部出现空"插件"菜单且布局无异常（D0.2 UI 测试）；启动过程 UI 不被插件加载阻塞（无可测插件时本项自然通过）。
+- 放入 `plugins/ExamplePlugin.jar` 后重启：
+  1) 主窗"插件"菜单出现"关于插件"项与只读"ExamplePlugin 1.0"；点击弹窗正常；
+  2) 托盘菜单出现插件项；
+  3) 悬浮球**重新打开后**右键菜单出现插件项；
+  4) 下拉框出现"示例插件模式"，可抽取、定格 `Hello from Plugin`（主窗无限滚动与悬浮球 20 次自停各验一次）；该模式无 schemeType，切换方案不得自动拨走它；主窗第 4/6 格无残留空/占位按钮（按钮隐藏，D0.12）；
+  5) `log/Modifylog.txt` 正确记录 onLoad/onUnload（建议 `PLUGIN_LOADED`/`PLUGIN_UNLOADED`/`PLUGIN_LOAD_ERROR`）。
+- **坏样例与隔离**（逐个放入 plugins/ 单独验收）：(a) 构造抛异常 → 整 jar 拒载；(b) onLoad 抛异常 → 拒载且**菜单/下拉框无任何残留**；(c) 冲突 → 整 jar 拒载（内置项完好）；每类均验证"相邻好插件不受影响"；类加载失败按 D0.10 整 jar 拒载。拒载均记 `PLUGIN_LOAD_ERROR`。
+- **多实现类**：可选加验一个 jar 含两个 Plugin 实现类 → 两者均被加载/展示（D0.9）。
+- 退出：`cleanupAndExit` 触发已提交插件 onUnload 与 URLClassLoader.close()（泄漏可忽略但代码须含关闭逻辑），退出码正常。
+
+【§8 边界与明确不做】
+- 不做运行中热插拔/重扫、不做插件 UI（选项面板）、不做插件间依赖解析、不做签名/权限校验（"受控 API + 可信插件"模型，仅文档强调禁打包 API 类）；不做 DataManager 共享单例重构（D0.8）。
+- 不改动核心业务类行为与数据/加密/锁机制；不改动 Stage2 已验收的模式契约（8 个抽象方法保持抽象，D0.12）；悬浮球右键菜单内置项内容与顺序保持不变（插件项仅追加）。

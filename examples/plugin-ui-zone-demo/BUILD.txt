@@ -1,0 +1,17 @@
+# plugin-ui-zone-demo（UI 槽演示留档）
+
+本目录用途（2026-09-05 起）：
+- `SettingsZoneDemoPlugin.java`：**已并入 `examples/plugin-example/ExamplePlugin`（2.0）**，此处仅留档，
+  不再单独编译/打包/放入 plugins/；
+- `SingleZoneDemoPlugin.java`：隔离验收样例——只向主窗 `MAIN_WINDOW` 注册"仅主窗按钮"（点击记日志
+  `SINGLEZONE_CLICKED`），用于验证"插件只需其中某个窗口"时其它窗口不受影响。
+
+## 编译（以主 jar 或主工程 out 为 API 类路径）
+
+```
+javac -encoding UTF-8 -cp <主 jar 或 out 目录> -d build SingleZoneDemoPlugin.java
+jar cf SingleZoneDemoPlugin.jar -C build .
+```
+
+放入 `plugins/` 重启后：仅主窗出现"仅主窗按钮"；其余窗口无任何该插件元素（隔离正确）。
+验收后请移除，避免常驻主窗。

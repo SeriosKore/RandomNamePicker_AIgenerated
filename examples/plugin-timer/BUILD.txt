@@ -1,0 +1,54 @@
+# CountUpTimerBall（正计时子球插件）编译打包说明
+
+依据《正计时子球开发方案.md》实现；宿主 `src/` **零改动**，仅新增本插件源码与 jar。
+
+## 源码文件（默认包，五文件）
+
+- `CountUpTimerPlugin.java` —— 插件入口（实现 `Plugin`）：注册设置窗按钮 addUiAction(UiZone.SETTINGS_WINDOW) +
+  三类菜单 + EDT 初始化/清理
+- `FloatingBallTracker.java` —— 控制器：全局 AWT 观察监听（通路 A）+ 悬浮球几何轮询（通路 B）+ 配置驱动尺寸/配色
+- `TimerBall.java` —— 计时子球窗口：自绘圆形 + 正计时状态机（配色/尺寸读 TimerBallConfig）
+- `TimerBallConfig.java` —— 外观配置模型：默认值=现行常量；读写 data/timerball_plugin.properties
+- `TimerBallSettingsDialog.java` —— “计时子球设置”对话框（尺寸模式/固定直径/三态配色/间距/恢复默认）
+
+插件 jar **只允许包含以上自身类**，禁止包含 `com/randomnamepicker/**`
+（API 类由宿主 parent-first 提供）。
+
+## 编译（JDK 22，以主工程 out 为 API 类路径）
+
+在 `examples/plugin-timer` 目录执行：
+
+```
+"C:\Program Files\Java\jdk-22\bin\javac.exe" -encoding UTF-8 -cp ../../out -d build CountUpTimerPlugin.java FloatingBallTracker.java TimerBall.java TimerBallConfig.java TimerBallSettingsDialog.java
+```
+
+（若主工程 `out/` 过期，先运行 `tools\build.bat` 重编主工程——只重编宿主，不改其源码。）
+
+## 打包
+
+```
+"C:\Program Files\Java\jdk-22\bin\jar.exe" cf CountUpTimerBall.jar -C build .
+```
+
+## 安装 / 卸载
+
+- 安装：把 `CountUpTimerBall.jar` 复制到程序运行目录的 `plugins/`（与 jar/exe 同级；
+  目录不存在时程序启动自动创建），重启程序。
+- 卸载：删除该 jar 后重启（宿主机制：不做运行中热插拔）。
+
+## 预期效果（交互见方案 §0 / §2，外观设置见 §3.3）
+
+- 设置窗“插件”区出现“计时子球”按钮 → 点击弹出“计时子球设置”：可调尺寸模式（自动/固定 30–90）、
+  三态配色、与悬浮球间距、恢复默认；修改即时生效并写入 `data/timerball_plugin.properties`（重启保留）。
+- 主窗“插件”菜单、托盘菜单出现“计时子球：冒出/收回”“计时子球：归零”；菜单尾只读“正计时子球 1.0”。
+- 打开悬浮球后：单击悬浮球（非拖动/非双击）→ 子球按屏幕半区方向冒出并开始正计时；
+  再单击 → 收回并暂停（读数保留）；再单击 → 冒出并继续。
+- 子球单击 = 暂停/继续；暂停态双击子球 = 归零并收回。
+- 悬浮球双击随机抽取、拖动移动均保持宿主原样；子球跟随悬浮球移动。
+- 悬浮球右键菜单需**重新打开悬浮球**后出现插件项（宿主每次新建实例读取，机制如此）。
+- 日志：加载成功 `PLUGIN_LOADED`；计时动作 `TIMER_START/TIMER_PAUSE/TIMER_RESUME/TIMER_RESET/
+  TIMER_BALL_SHOW/TIMER_BALL_HIDE`；退出 `PLUGIN_UNLOADED`。
+
+## 验收
+
+人工验收逐条对照《正计时子球开发方案.md》§7；宿主零改动复核：`src/` 无 diff。

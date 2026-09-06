@@ -1,0 +1,64 @@
+你是一名 Java 架构师。现在需要对一个已完成包迁移（Stage1 产物，根包 com.randomnamepicker）的 Swing 程序做"模式策略重构"，使其支持未来插件动态注册新模式，同时保持原有三种模式（名字列表、数字、座位）行为完全不变。请按以下要求执行，输出修改后的核心类代码和说明。
+
+【当前状况——以真实源码为准（动手前先读源码核对，不要按名称臆测）】
+- NamePickerApp（ui 包，主窗口）持有抽取逻辑：startPicking 用 switch(中文字符串)，分别调用 startNamePicking / startNumberPicking / startSeatPicking 三个私有方法，各自 new Timer(50ms) 无限滚动随机换显，直到用户再次点击按钮触发 stopPicking：停止后记录日志"方案名-模式下拉框文本=定格结果"（LogManager，操作码"抽取结果"）。
+- 启动前校验语义（现状，必须保留）：名单为空 → 弹窗"名单已损坏，请重新导入"并复位按钮；数字范围未设置 → 弹窗"请先设置数字范围！"并复位；座位配置为空或未选座位 → 弹窗"请先设置座位并选择座位！"并复位。
+- FloatingBall（floating 包）另有一份平行抽取逻辑（performNamePick / performNumberPick / performSeatPick），语义与主窗不同：固定 20 次滚动后自动停；名字超过 5 个字符截断显示为 "xxx..."；数据缺失时不弹窗而是在球上显示短文本——名单空显示"损坏"、数字无范围显示"无范围"、座位无显示"无座位"。右键菜单在构造时生成一次。
+- 模式下拉框在 NamePickerApp 中硬编码三个中文字符串：{"名字列表模式","数字模式","座位模式"}；onSchemeChanged 按方案类型（name_list / number / seat）自动把下拉框拨到对应模式。
+- ModeHandler（mode 包）现状为抽象类，构造方法接收 NamePickerApp 实例；其真实抽象方法集是 6 个（不存在 getModeButton1Text / getModeButton2Text 这样的名字，切勿臆造）：
+  1) JButton getModeButton1()   —— 死方法：主窗口从未调用过它（子类各自 new 的按钮是死对象）
+  2) JButton getModeButton2()   —— 同上
+  3) String getButton1Text()
+  4) String getButton2Text()
+  5) void handleButton1Click()
+  6) void handleButton2Click()
+- 附加按钮在主窗口 3×2 按钮网格的第 4、6 格（网格与位置不能变）。NamePickerApp 的 updateModeSpecificButtons 在每次方案/模式切换时 new 一个对应子类并：用 getButton1Text/getButton2Text 设置两个按钮文本、移除旧监听后绑定 handleButton1Click/handleButton2Click。
+- NumberPicker / SeatPicker 对话框内部各自还有一份 Timer 滚显与"抽取结果: ..."前缀文案——本阶段不改它们。
+
+【重构目标】
+1. 新 ModeHandler 抽象契约（mode 包）。每个模式提供：
+   - String getModeId()：稳定标识。内置三个必须与方案类型一致（name_list / number / seat）；插件可自定义。
+   - String getDisplayName()：下拉框显示文本。内置三个保持原串"名字列表模式/数字模式/座位模式"（日志用同一文本，保证 UI 与日志逐字不变）。
+   - String canPick()：返回 null 表示可开始抽取；非 null 为该模式"不可抽取原因"。语义必须与现状等价——主窗收到非 null 时，用该返回值作为弹窗文案并复位（内置三个返回值即现状弹窗文案："名单已损坏，请重新导入" / "请先设置数字范围！" / "请先设置座位并选择座位！"）；悬浮球收到非 null 时不弹窗，由悬浮球**按 modeId 映射出现状短文本**：name_list→"损坏"、number→"无范围"、seat→"无座位"（未来插件模式无映射时，允许回退为显示 canPick() 返回值，并在 Stage3 再定规则）。不允许把两处语义"统一"成同一种，也不允许悬浮球直接复用主窗的长文案。
+   - Supplier<String> nextCandidate()：返回一个随机候选结果字符串（随机名字/随机整数/随机座位坐标），主窗与悬浮球共用。
+   - 附加按钮能力：String getButton1Text() / getButton2Text()、void handleButton1Click() / handleButton2Click()，宿主依赖改为 ModeHost（见 2），按钮行为与文案不变。
+   - 契约删除死方法 getModeButton1() / getModeButton2()（NamePickerApp 从不调用，删除属行为无影响；如坚持保留则 UI 不得使用）。
+2. 宿主接口 ModeHost（放 mode 包），替代子类对 NamePickerApp 的直接依赖。方法集按现有子类真实用法逆推，最小集合为：
+   - Scheme getCurrentScheme()（返回 Scheme 对象而非仅名字——三个内置子类都要用 currentScheme.getName()）
+   - NameManager getNameManager()、SchemeManager getSchemeManager()、DataManager getDataManager()、LogManager getLogManager()
+   - java.awt.Frame getOwner()（构造 NumberPicker/SeatPicker、以及 JOptionPane / JFileChooser 父窗口用）
+   ModeHandler 构造参数由 NamePickerApp 改为 ModeHost；NamePickerApp 实现 ModeHost。
+   注意：悬浮球右键菜单调用的主窗操作（showConfigWindow / showSettingsWindow / hideFloatingBall 等）不属于 ModeHandler 能力，不要塞进 ModeHost；FloatingBall 本阶段继续通过其对主窗的既有引用调用。
+3. 通用滚停引擎 RollingPicker（新类，放 core 或 ui 包）：
+   - 构造参数：Supplier<String> 候选提供器、Consumer<String> 显示回调、策略参数：滚动间隔毫秒（默认 50）、Integer maxTicks（null=无限滚动直到 stop()，悬浮球传 20）、以及显示格式化策略——截断逻辑不能写死在引擎里：悬浮球做 5 字截断、主窗不截断，由调用方在显示回调/格式化参数中自行处理。
+   - 提供 start() / stop()；stop() 后通过 getLastValue() 返回最终定格值，供主窗写日志。
+   - 引擎不负责空数据提示：开始前由调用方先调 handler.canPick() 决定是否提示。
+4. 内置三模式改造：
+   - NameListModeHandler / NumberModeHandler / SeatModeHandler 实现 getModeId / getDisplayName / canPick / nextCandidate。nextCandidate 的取样逻辑从原 NamePickerApp.start*Picking 中提取，公式必须原样（数字：nextInt(max-min+1)+min；名字/座位从当前数据源随机取）。
+   - 各自的附加按钮逻辑保留，宿主改用 ModeHost（导入导出、设置/保存数字范围与座位、锁定拦截等行为与文案不变）。
+5. 重构 NamePickerApp：
+   - 删除 startNamePicking / startNumberPicking / startSeatPicking 及其中重复逻辑；"开始抽取"统一为：取当前 ModeHandler → canPick() 非 null 则按现状文案弹窗并复位；否则创建 RollingPicker（maxTicks=null、间隔 50ms）并启动，按钮变"停止"；停止时取 getLastValue() 按原格式记日志（方案名-模式显示名=定格结果，操作码"抽取结果"）并复位按钮。
+   - 引入最小模式注册表（本阶段内置三项，结构上为未来插件预留）：有序的 modeId → (displayName, 工厂/Supplier<ModeHandler>) 结构；下拉框数据源=注册表；代码内一律用 modeId 判断，不再 switch 中文字符串。
+   - onSchemeChanged 的方案类型→内置模式联动保留（name_list→名字列表模式，number→数字模式，seat→座位模式）；lastScheme 恢复行为不变。
+   - updateModeSpecificButtons：切换方案/模式时更新两个按钮文本并重绑监听，行为与网格位置不变。
+6. 重构 FloatingBall：
+   - 双击抽取改为：取当前模式对应 ModeHandler → canPick() 非 null 时在球上显示对应现状短文本；否则创建 RollingPicker（maxTicks=20、间隔 50ms，显示回调内做 5 字截断）并启动。
+   - 右键菜单本阶段保持内置项不变；可将"构造时生成一次"改为"每次弹出时重建"（为未来插件动态菜单做准备），但菜单内容不得变化。
+7. 不改动：NumberPicker / SeatPicker 内部滚显与文案；导入导出、数字范围、座位布局的所有原行为；已知死代码与原坑（见 Stage1）保持原样。
+
+【输出要求】
+1. 修改后的完整文件：ModeHandler、ModeHost（新接口）、RollingPicker（新类）、三个内置 ModeHandler 子类。
+2. NamePickerApp 中与模式选择、抽取、按钮绑定、方案联动相关的完整代码（可给出全文件）。
+3. FloatingBall 中与抽取相关的代码修改（可给出全文件）。
+4. 模式注册表的定义与接入 NamePickerApp 的代码。
+5. 手动测试清单与说明（对应下方验收标准逐条可勾选）。
+
+【验收标准】
+- 编译零错误（沿用 Stage1 的编译方式）。
+- 行为等价性人工核对（逐条通过）：
+  1) 主窗三模式：开始→无限滚动直到手动停止→定格；日志行与迁移前逐字一致（方案名、模式显示名、结果）；
+  2) 数据缺失提示：文案与触发时机与现状一致（主窗弹窗、悬浮球短文本，各自保持原样）；
+  3) 悬浮球双击：固定 20 次滚动后自动定格；超 5 字名字截断；结果与主窗同源同公式；
+  4) 方案切换自动联动内置模式、lastScheme 恢复、附加按钮文本与点击行为不变；
+  5) 锁定模式下导入/导出等操作仍被拦截。
+- 扩展点验证：临时编写一个"模拟插件"的 ModeHandler 子类（仅验证用，验证后删除或注明为演示类，不得作为正式功能落地），通过注册表注册后能出现在下拉框并被选择抽取——证明未来插件动态注册模式的路径成立。
