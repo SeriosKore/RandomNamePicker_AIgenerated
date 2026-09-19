@@ -57,14 +57,15 @@ public class NameListModeHandler extends ModeHandler {
 
     @Override
     public Supplier<String> nextCandidate() {
+        // D2：创建 Supplier 时冻结快照（滚动期间不被其它宿主的 canPick 改写）
+        final List<String> snapshot = cachedNames;
         return () -> {
-            List<String> names = cachedNames;
+            List<String> names = snapshot;
             if (names == null || names.isEmpty()) {
                 // 兜底：未经 canPick() 直接取候选时重新载入（正常流程总是先调 canPick()）
                 Scheme currentScheme = host.getCurrentScheme();
                 if (currentScheme != null) {
                     names = nameManager.loadNamesForScheme(currentScheme.getName());
-                    cachedNames = names;
                 }
             }
             if (names == null || names.isEmpty()) {

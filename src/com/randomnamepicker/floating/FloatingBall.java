@@ -225,7 +225,8 @@ public class FloatingBall extends JWindow {
     private void showNumberPicker() {
         Scheme currentScheme = mainApp.getCurrentScheme();
         if (currentScheme != null) {
-            NumberPicker numberPicker = new NumberPicker((Frame) mainApp, currentScheme.getName());
+            // T1：对话框构造参数已由 Frame 改为 Window（宿主窗口自身）
+            NumberPicker numberPicker = new NumberPicker(mainApp, currentScheme.getName());
             numberPicker.setVisible(true);
         }
     }
@@ -233,7 +234,8 @@ public class FloatingBall extends JWindow {
     private void showSeatPicker() {
         Scheme currentScheme = mainApp.getCurrentScheme();
         if (currentScheme != null) {
-            SeatPicker seatPicker = new SeatPicker((Frame) mainApp, currentScheme.getName());
+            // T1：同上
+            SeatPicker seatPicker = new SeatPicker(mainApp, currentScheme.getName());
             seatPicker.setVisible(true);
         }
     }
@@ -317,6 +319,12 @@ public class FloatingBall extends JWindow {
         // Q2：仅真实抽取（canPick 通过）才派发 PICK_STARTED；自停定格经 RollingPicker 自动停回调派发 PICK_FINISHED。
         PluginManager.getInstance().dispatchHostEvent(
                 HostEvent.pickStarted(HostEvent.Source.BALL, schemeName, schemeType, modeId, modeDisplayName));
+        // D3：先停掉上一次的滚停实例——旧实现直接覆盖字段，遗留的 Timer 会与新 Timer 同时驱动
+        // 同一标签，并在自身滚满 20 次后经 onAutoStop 读取“当前”picker，产生重复/错值的 PICK_FINISHED。
+        if (rollingPicker != null) {
+            rollingPicker.stop();
+            rollingPicker = null;
+        }
         final Supplier<String> safeSupplier = buildSafeCandidateSupplier(handler);
         rollingPicker = new RollingPicker(safeSupplier,
                 value -> {

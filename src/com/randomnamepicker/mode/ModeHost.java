@@ -50,13 +50,38 @@ public interface ModeHost {
     Rectangle getMainWindowBounds();
 
     /**
-     * 父窗口（JOptionPane / JFileChooser 父窗口用；构造 NumberPicker / SeatPicker 时按需
-     * 转型为 Frame —— 当前唯一宿主 NamePickerApp 即 JFrame）。
+     * 宿主窗口自身（模态子窗口 owner 用；P0 修复批次新增）。
+     * <p>
+     * 内置模式弹设置对话框（NumberPicker / SeatPicker 等）必须用本方法取父窗：
+     * 宿主应覆写为返回自身窗口（NamePickerApp 返回 {@code this}）。
+     * </p>
+     * <p>
+     * 为什么不用 {@link #getOwner()}：本接口的 getOwner() 即 AWT
+     * {@code java.awt.Window#getOwner()}，而<b>无 owner 的顶级窗返回 null</b>——宿主主窗
+     * 恰是无 owner 的顶级 JFrame，故 getOwner() 恒为 null；把它当父窗转型会在对话框构造期
+     * 产生 NPE（2026-09 事故：座位/数字设置按钮报
+     * {@code Cannot invoke "...NamePickerApp.getSchemeManager()" because "this.mainApp" is null}）。
+     * </p>
+     * <p>
+     * 默认实现回退到 {@link #getOwner()}（保持既有实现者的源码/二进制兼容）；宿主务必覆写，
+     * 否则该回退值仍可能为 null。
+     * </p>
+     */
+    default Window getHostWindow() {
+        return getOwner();
+    }
+
+    /**
+     * AWT 窗口 owner（JFileChooser / JOptionPane 父窗可传 null，AWT 会居中屏幕）。
      * <p>
      * 返回类型必须用 java.awt.Window 而非 Frame：NamePickerApp 继承自 JFrame，其
      * java.awt.Window#getOwner() 已被 AWT 模态机制使用；若宿主以 Frame 协变重写它并返回
      * 自身，会令 owner 链自引用，导致所有模态子窗口死锁（白屏无法关闭）。因此本方法即
      * AWT 的 Window.getOwner() 实现，宿主不得再重写。
+     * </p>
+     * <p>
+     * <b>注意：顶级窗（宿主主窗）无 owner，本方法返回 null。</b>需要“宿主窗口自身”作模态子窗
+     * owner 时请用 {@link #getHostWindow()}，不要用本方法。
      * </p>
      */
     Window getOwner();

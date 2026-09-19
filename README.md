@@ -34,6 +34,8 @@
 
 **插件 UI 槽迭代（2026-09-04/05，承接 Stage3）**：统一 Zone 架构（`PluginContext.addUiAction(UiZone,…)` + PluginManager Zone 注册表 + `PluginUiSupport` 多渲染端）。一期在设置窗试点并验收；二期推广至全部业务窗口——主窗（3×2 按钮阵下方两列按钮区，其上有"插件"标识 + 分隔线）、配置名单、方案管理、数字设置、座位设置，外加一期设置窗，共六个窗口 Zone；另有 `MAIN_MENU/TRAY_MENU/FLOATING_BALL_MENU` 三个既有菜单 Zone（旧菜单 API 为 default 委托）。空 Zone 零渲染、严格 null-zone 拒载、无运行中热插拔。自动化 none/all 场景 PASS；`RandomNamePicker.jar` 已重建；示例 `plugins/ExamplePlugin.jar`（2.0）已并入 UI 槽演示功能："注意"按钮出现在六个窗口，点击弹窗"无运行中热插拔：增删插件/改按钮都要重启"（原 SettingsZoneDemoPlugin 已并入并移出 plugins）。详见《插件UI槽一期/二期任务书与交付报告》。
 
+**座位/数字抽取 P0 修复批次（2026-09-19；改动前副本在 `.p0fix_originals/`）**：修复"主窗『设置座位布局 / 设置数字范围』点击即报 `Cannot invoke "...NamePickerApp.getSchemeManager()" because "this.mainApp" is null`"——根因是 `ModeHost.getOwner()` 即 AWT `java.awt.Window#getOwner()`，而**宿主主窗是无 owner 的顶级 JFrame，故恒为 null**；两个内置 Handler 把这个 null 当父窗传给 `SeatPicker/NumberPicker`，对话框把 `(NamePickerApp) null` 存为 `mainApp`，构造期对 null 调 `getSchemeManager()` 抛 NPE（构造未完成即中止，因此日志中从来只有名字列表、没有"设置座位布局/设置数字范围"记录）。修法：`ModeHost` 新增 `getHostWindow()`（default 回退 `getOwner()`，宿主覆写返回自身），两个对话框构造参数由 `Frame` 改为 `Window` 并对非 `NamePickerApp` 父窗 fail-fast（详见 §6-17）。同批落地：① 座位不变式"座位 ⊆ 行列范围"——越界座位三项确认（移除/取消并恢复原行列/自动扩展行列容纳）+ `getSeatConfig` 读取层过滤 + 行列上限 30×30（§6-19）；② 显式保存语义——点选座位不再静默写盘、`更新布局` 不再谎称"已保存"、关窗有未保存修改二次确认、两个对话框的 `应用到方案` 先真保存再提示（修掉"校验失败仍报已应用"与双弹窗）；③ 数字范围口径——允许负数与单值（仅禁 `min > max`）、跨度 ≤ 2³¹-1 且底层长整型防溢出（§6-18）；④ 对话框结果可见性——座位结果标签曾被按钮行覆盖（`BorderLayout.SOUTH` 同区覆盖，与 §6-14 同一坑）、数字"停止即清空"结果，均已修复，且两处抽取定格补记 `抽取结果` 日志；⑤ 归属与实例——主窗冻结本次"方案+模式"用于日志与 `PICK_FINISHED`、`nextCandidate()` 创建时冻结快照、悬浮球双击先停旧 `RollingPicker`、托盘隐藏前停止滚动（§6-22）；⑥ 数据自愈分支改用"恢复出来的内容"（旧实现返回损坏主文件的旧值）；⑦ G1 方案身份——内置"默认方案"名保留 + 方案名合法性校验 + 下拉框区分显示（§6-20）。全量 javac 零错误（45 个 .java / 80 个 class），`RandomNamePicker.jar` 已重建，21 项自动化检查 PASS（含"主窗 `getOwner()==null`"根因确认与两个对话框构造成功）。
+
 **宿主插件生态一期（插件体系二次开发一期，2026 实施）**：在不动加载内核的前提下补齐——① 打包禁令强制（jar 内 `com/randomnamepicker/` 前缀 .class 条目 → 整 jar 拒载 `BUNDLED_HOST_CLASS`）；② API 级别门控（`HostApi.PLUGIN_API_LEVEL`，基线 1 → 本期 **2**；插件可经 Manifest `Api-Level-Min` 声明，不符 → `VERSION_MISMATCH` 拒载）；③ 宿主事件订阅（九类：PLUGINS_CHANGED/SCHEME_CHANGED/MODE_CHANGED/PICK_STARTED/PICK_FINISHED/LOCK_CHANGED/BALL_SHOWN/BALL_HIDDEN/BALL_MOVED，EDT 防御派发、按 jar+实现类自动清理，含 Ctrl+L×10 后门锁事件，PasswordManager 零改动）；④ 加载结果可观测（`LoadOutcome`/`RejectReason` + 主窗"插件"菜单尾"插件状态…"入口）；⑤ 悬浮球窗口钩子（G1 `ModeHost` 几何只读查询、G2 BALL_* 事件、G4 `ModeHandler.getContextMenuItems()` 模式专属右键项）。新增 `plugin/HostApi.java`、`plugin/HostEvent.java`、`plugin/HostEventListener.java`；`ModeRegistry.register/unregister` 收紧为宿主内部；`ModeHost`/`ModeHandler` 仅新增只读/default 方法。源码 45 个 .java（主 jar 76 个 class）。`plugins/` 现含 ExamplePlugin.jar、CountUpTimerBall.jar 与新增 EventsDemoPlugin.jar；QA 新增 BadBundlePlugin（打包违规）与 BadVersionPlugin（级别不符）。另：**托盘菜单已由原生 AWT 菜单改为 Swing 中文弹出菜单**（托盘图标单击/双击唤出，规避系统菜单字体显示中文为方框的平台限制，详见《插件开发文档.md》§15.7）。详见《插件体系二次开发一期任务书/交付报告》。
 
 `.sp-review/` 是某执行方下载的评审工具包缓存，与项目无关，可忽略或删除。
@@ -182,12 +184,12 @@ log/
 - 非 null（数据缺失/损坏）→ 主窗**弹窗并复位**：名字模式为"错误/ERROR"样式、数字/座位为"提示/WARNING"样式，文案即 canPick() 返回值（"名单已损坏，请重新导入"/"请先设置数字范围！"/"请先设置座位并选择座位！"）。**严格保真（D1）**：与迁移前一致，此类点击仍补记一行"抽取结果"日志（值=当时标签文本）。
 - null（可抽取）→ `isPicking=true`、按钮变"停止" → 建 `RollingPicker(候选=handler.nextCandidate(), 回调=写标签, 50ms, maxTicks=null)` 无限滚动（`javax.swing.Timer`，每 50ms 一次，随机源在各自 Handler 内）→ 再点按钮即 `stopPicking`：停引擎、复位按钮、把定格值按 `方案-模式显示名=结果` 记日志（操作码"抽取结果"）。
 
-取样公式/规则与迁移前逐字一致：数字 `nextInt(max-min+1)+min`；名字/座位从当前方案数据随机取。悬浮球用同一 Handler 取样（同源同公式），固定 20 次自停。
+取样公式/规则：数字为区间内随机整数，跨度以 **long** 计算（`span = (long)max - (long)min + 1`，合法范围内走 `nextInt((int)span) + min`，超界兜底 `floorMod(nextLong(), span)`）——支持负数与单值范围 `min == max`，且不会因 `max-min+1` 在 int 下溢出而抛 `IllegalArgumentException`（P0 修复批次，见 §6-18）；名字/座位从当前方案数据随机取，座位由 `getSeatConfig` 过滤越界坐标后保证候选合法（见 §6-19）。悬浮球用同一 Handler 取样（同源同公式），固定 20 次自停。
 
 ### 4.2 三种模式
 - 名字列表模式：从当前方案加密名单中随机选一行显示。
-- 数字模式：在当前方案数字范围内随机整数。
-- 座位模式：从当前方案"已选座位"集合中随机取一个 `(行,列)` 显示。
+- 数字模式：在当前方案数字范围内随机整数（允许负数与单值范围 min == max；仅 min > max 非法；跨度 ≤ 2³¹-1）。
+- 座位模式：从当前方案"已选座位"集合中随机取一个 `(行,列)` 显示；**读取层过滤越界座位**（坐标超出 rows/cols 的座位不参与抽取，见 §6-19）。
 
 ### 4.3 方案（Scheme）机制
 - 每方案有类型 name_list / number / seat；新建方案时由用户在原始类型码下拉中选择。
@@ -215,7 +217,7 @@ log/
 `autoStart`(bool) / `floatingBallRadius`(30–100,默认50) / `floatingBallOpacity`(50–255,默认200) / `minimizeToTray`(默认 true) / `lastScheme` / `x7f9a2b1c4e8d3f6`(密码SHA-256)。`ConfigManager.saveConfig` 采用"读旧文件→覆写已知键→整存"策略，未知键会保留。
 
 ### 4.8 日志
-所有用户可见操作都经 `LogManager.log(详情, 操作码)` 落盘 `log/Modifylog.txt`（追加、UTF-8），含大量 DEBUG 级恢复过程日志。设置窗可"导出日志文件"复制该文件。插件相关操作码：`PLUGIN_LOADED` / `PLUGIN_UNLOADED` / `PLUGIN_LOAD_ERROR`（拒载与各类插件异常）、`PLUGIN_MODE_ERROR` 类（校验/候选异常日志）。
+所有用户可见操作都经 `LogManager.log(详情, 操作码)` 落盘 `log/Modifylog.txt`（追加、UTF-8），含大量 DEBUG 级恢复过程日志。设置窗可"导出日志文件"复制该文件。插件相关操作码：`PLUGIN_LOADED` / `PLUGIN_UNLOADED` / `PLUGIN_LOAD_ERROR`（拒载与各类插件异常）、`PLUGIN_MODE_ERROR` 类（校验/候选异常日志）。宿主模式/数据类操作码（P0 修复批次补充）：`MODE_ACTION_ERROR`（模式按钮动作异常，不再套用插件专属的 PLUGIN_LOAD_ERROR）、`SEAT_OUT_OF_RANGE`（座位配置中越界座位被忽略）、`SCHEME_NAME_COLLISION`（自建方案与内置"默认方案"同名）、`查看数字范围`/`查看座位设置`（模式按钮2 只读回显）、`更新座位布局`/`取消座位布局变更`（座位对话框）。
 
 ### 4.9 插件机制（Stage3）
 - 运行目录：`plugins/`（`user.dir` 下，与 jar/exe 同级；不存在则启动自动创建），只扫描 `*.jar`（文件名排序）。
@@ -257,7 +259,7 @@ java -jar RandomNamePicker.jar
 4. **改密两步链的"免验旧"特性**：NewPasswordDialog 直接调 `changePasswordDirectly`，只要旧密码对话框放行（含 Ctrl+L 后门）即换密成功。
 5. **伪备份文件**：`log/` 下的 `.dat/.tmp/.log` 伪装名文件是**加密数据备份**，不是日志；误删会削弱自愈能力（恢复优先级 log > backup > data）。
 6. **工具脚本名不符**：`LogClearer.bat` 实为删除开机自启注册表项；`build.bat` 成功提示写的是 `RandomNamePicker_new.jar`，实际产物为 `RandomNamePicker.jar`。
-7. **模式按钮2语义弱**：Number/Seat 模式的"保存…"按钮只读当前已存配置并弹提示，真正保存须在 NumberPicker/SeatPicker 对话框内；SeatPicker 点击座位会**立即静默保存**。
+7. **模式按钮2 = 只读回显（P0 修复批次已改文案）**：Number/Seat 模式的"保存…"按钮只读当前已存配置并弹提示，真正保存须在 NumberPicker/SeatPicker 对话框内；SeatPicker 已改为**显式保存**（点选座位只改内存，关窗有未保存修改会二次确认）。
 8. 名单导入 = 追加合并不去重；抽取结果不归档（原"抽取日志"功能已被注释废除）。
 9. 安全强度刻意偏低（默认密码硬编码、无盐 SHA-256、存在免密后门、config 混淆键），符合"防学生乱改"定位，勿擅自"加固"改坏行为——除非明确要求。
 10. 所有窗口/对话框直接 new，无依赖注入；状态靠静态类（ConfigManager/PasswordManager/LogManager）共享，多实例测试时注意静态残留（如解锁态、Ctrl+L 计数）。
@@ -267,6 +269,13 @@ java -jar RandomNamePicker.jar
 14. **BorderLayout 同区域重复 `add` = 后者覆盖前者（历史坑，2026-09-04 已修）**：`ConfigWindow` 曾把"姓名+添加+删除"输入行与"导入/导出/保存"按钮行都 `add` 到 `SOUTH`，导致"添加名字/删除名字"整行不可见（组件仍在组件树中、代码可调用，但用户看不到点不到）。修复：两行纵向叠放（BoxLayout.Y_AXIS）后整体入 SOUTH。新增对话框布局时注意勿把多个面板压到同一 BorderLayout 区域。
 15. **插件事务与隔离（Stage3）**：加载单元＝单个 jar——类加载失败/实例化失败/onLoad 异常/提交冲突任一发生即**整 jar 拒载并回滚**（onLoad 成功者补 onUnload），拒载只记日志不影响其它 jar；onLoad 中 `registerModeHandler/addXxxMenuAction` 只进暂存区，提交通过才可见（无半状态）；菜单标题不判重；不做运行中热插拔（增删 `plugins/` 下 jar 需重启）；悬浮球每次新建实例读取当前插件。**插件 jar 禁止打包 `com/randomnamepicker/**`**（API 由宿主 parent-first 提供；不做强制检查，属文档约束）。
 16. **插件模式与内置的边界（Stage3）**：插件模式不经 `ModeRegistry`（仅内置三项），由 `PluginManager` 提交后并入下拉框；冲突预检同时比对内置（ModeRegistry）与已提交插件；插件模式无 schemeType，`onSchemeChanged` 不会自动拨动它；卸载插件无运行中路径，仅在退出时 onUnload。
+
+17. **`ModeHost.getOwner()` 对顶级窗返回 null（P0 修复批次记录，2026-09-19）**：本接口的 `getOwner()` 就是 AWT `java.awt.Window#getOwner()`，而宿主主窗是**无 owner 的顶级 JFrame → 恒为 null**。它只能用于 `JOptionPane`/`JFileChooser` 这类"父窗可空"的场合；**作模态子窗 owner 必须用 `getHostWindow()`**（宿主返回自身；注意 §6-13 的红线仍是"不得重写 `getOwner()`"）。事故复盘：两个内置模式曾把该 null 转型传入 `SeatPicker/NumberPicker`，对话框把 `(NamePickerApp) null` 存为 `mainApp` 后在构造期 NPE（"Cannot invoke ...getSchemeManager() because this.mainApp is null"），主窗"设置座位布局/设置数字范围"完全不可用，而**悬浮球右键的同一项可用**（它传的是主窗实例）——"主窗坏、悬浮球好"这个不对称就是该类问题的判别特征。现两个对话框同时对非 `NamePickerApp` 父窗做 fail-fast。
+18. **数字范围取值口径（P0 修复批次定型）**：允许负数与单值范围（`min == max` 合法），只禁止 `min > max`（提示"最小值不能大于最大值！"）；保存/抽取时校验跨度 `max-min+1 ≤ 2³¹-1`，超限给出提示；底层取样跨度以 long 计算。旧式 `nextInt(max-min+1)` 在极端跨度下 `max-min+1` 溢出成非正数 → `IllegalArgumentException`，且会被主窗防御层回退显示为"插件模式异常"（内置模式套插件文案，误导排障）。
+19. **座位不变式"座位 ⊆ 行列范围"（P0 修复批次定型）**：`SeatPicker` 在"更新布局"与"保存设置"两个动作点检测越界座位并弹三项确认（移除越界座位 / 取消并恢复原行列 / 自动扩展行列容纳），用户取消确认框（含直接关闭）按"取消"处理；`SchemeManager.getSeatConfig` 在**读取层**过滤越界坐标（不改磁盘文件，仅记 `SEAT_OUT_OF_RANGE` 日志），因此抽取候选恒为合法座位。行列上限 30×30（旧版可输入 999 → 近百万 `JButton` 卡死）。
+20. **方案名与内置"默认方案"（P0 修复批次 G1）**：内置"默认方案"不来自 `index.txt`，其名称/类型由 `SchemeManager.BUILTIN_DEFAULT_SCHEME_NAME/TYPE` 集中定义，并纳入方案创建的**重名校验**；方案名禁含 `, \ / : * ? " < > |` 且 ≤ 30 字符（逗号会破坏 `index.txt` 解析，其余会破坏数据文件命名清洗与删除路径；`getAllSchemes` 已改为按首个逗号切分并跳过空行/无逗号行，含逗号行不再被静默丢弃）；主窗下拉框与方案管理列表显示"名称（类型）"（内置项标"内置·"）以便区分重名。**存量同名方案只提示、不自动改名**——加密盐含方案名，改名必须"旧盐解密 → 新盐重新加密"，自动改名有丢数据风险。注意：删除同名自建方案会连带删除内置方案的数据文件（名单可由三副本自愈，数字/座位不会，见 §4.4）。
+21. **数字/座位设置不纳入"锁定"门控（P0 修复批次明确的设计边界）**：`PasswordManager.isLocked()` 只拦名单导入/导出、配置窗增删改存、方案创建/删除；`NumberPicker`/`SeatPicker` 及其两个模式按钮**不拦**（本轮明确定不做，勿"顺手补锁"；若将来要改，需同步本节与 §4.5）。
+22. **抽取归属与滚停实例（P0 修复批次）**：主窗"开始抽取"成功后会冻结本次的 `方案 + 模式`（含 schemeType/modeId），停止时的 `抽取结果` 日志与 `PICK_FINISHED` 事件一律用冻结值——滚动期间切换方案/模式不再造成归属错配（数据缺失点击的"保真补记"路径仍取当时下拉值）；`nextCandidate()` 返回的 Supplier 在**创建时**冻结数据快照，不再读可变字段（避免另一宿主如悬浮球的 `canPick()` 覆盖进行中滚动的数据源）；悬浮球双击抽取前先停旧 `RollingPicker`（旧实现遗留 Timer 会与新 Timer 同时驱动标签，并在自身滚满 20 次后派发重复/错值的 `PICK_FINISHED`）；最小化到托盘前先停止滚动。
 
 ---
 

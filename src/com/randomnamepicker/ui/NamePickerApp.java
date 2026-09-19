@@ -49,6 +49,13 @@ public class NamePickerApp extends JFrame implements ModeHost {
     private boolean suppressModeEvent = false;
     /** Q3：方案下拉的程序化刷新（构造恢复/方案管理后重载等）屏蔽 SCHEME_CHANGED 派发。 */
     private boolean suppressSchemeEvent = false;
+    /** G1：内置“默认方案”下拉项引用（不来自 index.txt；仅用于显示区分）。 */
+    private Scheme builtinScheme;
+    /** 阶段3（D1）：本次抽取冻结的方案/模式快照——滚动期间用户切换不影响日志与事件归属。 */
+    private String pickSchemeName;
+    private String pickSchemeType;
+    private String pickModeId;
+    private String pickModeDisplayName;
 
 
     public NamePickerApp() {
@@ -103,6 +110,10 @@ public class NamePickerApp extends JFrame implements ModeHost {
             @Override
             public void windowClosing(java.awt.event.WindowEvent windowEvent) {
                 if (ConfigManager.isMinimizeToTray()) {
+                    // 阶段3（D4）：隐藏到托盘前先停滚动，避免隐藏态 Timer 空转与状态残留
+                    if (isPicking) {
+                        stopPicking();
+                    }
                     setVisible(false);
                 } else {
                     Main.cleanupAndExit();
@@ -138,6 +149,21 @@ public class NamePickerApp extends JFrame implements ModeHost {
         modeButton2 = new JButton();
 
         schemeComboBox = new JComboBox<>();
+        // G1：方案名可重名（内置“默认方案”不来自 index.txt），下拉框补类型/内置标识以便区分
+        schemeComboBox.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+                                                          boolean isSelected, boolean cellHasFocus) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (value instanceof Scheme) {
+                    Scheme scheme = (Scheme) value;
+                    String type = scheme.getType() == null ? "" : scheme.getType();
+                    boolean builtin = (scheme == builtinScheme);
+                    setText(scheme.getName() + "（" + (builtin ? "内置·" : "") + type + "）");
+                }
+                return this;
+            }
+        });
         modeComboBox = new JComboBox<>(ModeRegistry.getDisplayNames().toArray(new String[0]));
         modeComboBox.setToolTipText("选择抽取模式");
     }
@@ -225,7 +251,9 @@ public class NamePickerApp extends JFrame implements ModeHost {
 
     private void loadSchemes() {
         schemeComboBox.removeAllItems();
-        schemeComboBox.addItem(new Scheme("默认方案", "name_list"));
+        // G1：内置“默认方案”名称提为 SchemeManager 常量（与方案重名校验共用同一来源）
+        builtinScheme = new Scheme(SchemeManager.BUILTIN_DEFAULT_SCHEME_NAME, SchemeManager.BUILTIN_DEFAULT_SCHEME_TYPE);
+        schemeComboBox.addItem(builtinScheme);
         for (Scheme scheme : schemeManager.getAllSchemes()) {
             schemeComboBox.addItem(scheme);
         }
@@ -369,8 +397,10 @@ public class NamePickerApp extends JFrame implements ModeHost {
                 handler.handleButton2Click();
             }
         } catch (Throwable t) {
-            LogManager.log("模式按钮动作异常 - " + safeDisplayName(handler) + ": " + t, "PLUGIN_LOAD_ERROR");
-            JOptionPane.showMessageDialog(this, "模式按钮操作异常：" + t.getMessage(), "提示", JOptionPane.WARNING_MESSAGE);
+            // P0：内置模式按钮异常不再套用插件专属操作码（PLUGIN_LOAD_ERROR 语义为插件拒载/插件异常归属）
+            LogManager.log("模式按钮动作异常 - " + safeDisplayName(handler) + ": " + t, "MODE_ACTION_ERROR");
+            JOptionPane.showMessageDialog(this, "模式按钮操作异常：" + t.getMessage() + "\n（详见 log/Modifylog.txt）",
+                    "提示", JOptionPane.WARNING_MESSAGE);
         }
     }
 
@@ -568,8 +598,11 @@ public class NamePickerApp extends JFrame implements ModeHost {
         if (blockReason != null) {
             // 语义与现状等价：以 canPick() 返回值作为弹窗文案并复位
             showBlockedMessage(handler, blockReason);
-            // D1 严格保真：与迁移前一致，数据缺失点击后仍按旧格式补记一行“抽取结果”（值=当时标签文本）
-            logResult();
+            // D1 严格保真：与迁移前一致，数据缺失点击后仍按旧格式补记一行“抽取结果”（值=当时标签文本）。
+            // 该路径不进入滚动、无冻结快照，方案/模式取“当时”的下拉值。
+            Scheme blockedScheme = getCurrentScheme();
+            logResult(blockedScheme != null ? blockedScheme.getName() : null,
+                    (String) modeComboBox.getSelectedItem());
             return;
         }
 
@@ -578,9 +611,13 @@ public class NamePickerApp extends JFrame implements ModeHost {
 
         // Q2：真实抽取（canPick 通过并启动滚动）才派发 PICK_STARTED
         String modeDisplayName = (String) modeComboBox.getSelectedItem();
+        // D1：冻结本次抽取的方案/模式——滚动期间切换方案/模式不影响日志与事件归属
+        pickSchemeName = selectedScheme.getName();
+        pickSchemeType = safeSchemeType(selectedScheme);
+        pickModeId = modeIdOf(modeDisplayName);
+        pickModeDisplayName = modeDisplayName;
         PluginManager.getInstance().dispatchHostEvent(HostEvent.pickStarted(HostEvent.Source.MAIN,
-                selectedScheme.getName(), safeSchemeType(selectedScheme),
-                modeIdOf(modeDisplayName), modeDisplayName));
+                pickSchemeName, pickSchemeType, pickModeId, pickModeDisplayName));
         rollingPicker = new RollingPicker(buildSafeCandidateSupplier(handler), value -> displayLabel.setText(value));
         rollingPicker.start();
         //抽取日志记录（被废除）
@@ -621,29 +658,41 @@ public class NamePickerApp extends JFrame implements ModeHost {
             rollingPicker.stop();
             rollingPicker = null;
         }
-        logResult();
-        // Q2：真实抽取结束定格 → PICK_FINISHED（结果取定格标签文本，与 logResult 同口径）
+        // D1：定格日志与事件一律使用“本次抽取开始时冻结”的方案/模式；
+        // 滚动期间用户切换方案/模式不再把结果记到新方案/新模式名下。
         Scheme currentScheme = getCurrentScheme();
-        String modeDisplayName = (String) modeComboBox.getSelectedItem();
-        if (currentScheme != null && modeDisplayName != null) {
+        String schemeName = pickSchemeName != null ? pickSchemeName
+                : (currentScheme != null ? currentScheme.getName() : null);
+        String schemeType = pickSchemeType != null ? pickSchemeType
+                : (currentScheme != null ? safeSchemeType(currentScheme) : "");
+        String modeDisplayName = pickModeDisplayName != null ? pickModeDisplayName
+                : (String) modeComboBox.getSelectedItem();
+        logResult(schemeName, modeDisplayName);
+        // Q2：真实抽取结束定格 → PICK_FINISHED（结果取定格标签文本，与 logResult 同口径）
+        if (schemeName != null && modeDisplayName != null) {
+            String modeId = pickModeId != null ? pickModeId : modeIdOf(modeDisplayName);
             PluginManager.getInstance().dispatchHostEvent(HostEvent.pickFinished(HostEvent.Source.MAIN,
-                    currentScheme.getName(), safeSchemeType(currentScheme),
-                    modeIdOf(modeDisplayName), modeDisplayName, displayLabel.getText()));
+                    schemeName, schemeType, modeId, modeDisplayName, displayLabel.getText()));
         }
+        pickSchemeName = null;
+        pickSchemeType = null;
+        pickModeId = null;
+        pickModeDisplayName = null;
     }
 
     /**
-     * 停止后按原格式记日志：方案名-模式下拉框文本=定格结果（操作码“抽取结果”）。
+     * 停止后按原格式记日志：方案名-模式显示名=定格结果（操作码“抽取结果”）。
      * 结果取当前标签文本：正常定格时标签即最后一次滚显候选（与 RollingPicker.getLastValue()
      * 一致）；零刻度立即停止/数据缺失复位等边界与迁移前 stopPicking 语义一致。
+     * <p>
+     * D1：改为显式接收方案/模式（调用方传“冻结快照”或“当时下拉值”），不再内部读下拉框，
+     * 避免滚动期间切换下拉导致的归属错配。
+     * </p>
      */
-    private void logResult() {
+    private void logResult(String schemeName, String modeDisplayName) {
         String result = displayLabel.getText();
-        String selectedMode = (String) modeComboBox.getSelectedItem();
-        Scheme currentScheme = getCurrentScheme();
-        
-        if (currentScheme != null && selectedMode != null) {
-            LogManager.log(currentScheme.getName() + "-" + selectedMode + "=" + result, "抽取结果");
+        if (schemeName != null && modeDisplayName != null) {
+            LogManager.log(schemeName + "-" + modeDisplayName + "=" + result, "抽取结果");
         }
     }
 
@@ -735,6 +784,15 @@ public class NamePickerApp extends JFrame implements ModeHost {
     // ModeHost.getOwner()（返回 java.awt.Window）由继承自 java.awt.Window 的同名方法实现，
     // 本类不得重写 getOwner()：若以 Frame 协变重写并返回自身会破坏 AWT 模态 owner 链，
     // 导致所有模态子窗口死锁（白屏、无法关闭）。
+    //
+    // 但顶级主窗没有 owner，故 getOwner() 恒为 null（2026-09 事故：设置数字范围/设置座位布局
+    // 把该 null 当父窗转型，对话框构造期 NPE）。需要“宿主窗口自身”作模态子窗 owner 时用下面
+    // 这个新增方法（P0 修复批次 T1）——它是 getHostWindow()，不是 getOwner()，两者勿混用。
+
+    @Override
+    public java.awt.Window getHostWindow() {
+        return this;
+    }
 
     public Scheme getCurrentScheme() {
         return (Scheme) schemeComboBox.getSelectedItem();

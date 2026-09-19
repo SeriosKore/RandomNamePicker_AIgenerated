@@ -10,6 +10,12 @@ import java.awt.event.ActionEvent;
 import javax.swing.*;
 
 public class SchemeManagerDialog extends JDialog {
+
+    /** G1：方案名非法字符（逗号会破坏 index.txt 解析；其余会破坏数据文件名清洗与删除路径）。 */
+    private static final String INVALID_NAME_CHARS = ",\\/:*?\"<>|";
+    /** G1：方案名长度上限。 */
+    private static final int MAX_NAME_LENGTH = 30;
+
     private JTextField schemeNameField;
     private JComboBox<String> typeComboBox;
     private JList<Scheme> schemeList;
@@ -24,6 +30,8 @@ public class SchemeManagerDialog extends JDialog {
         initializeComponents();
         setupLayout();
         loadSchemes();
+        // G1：存量同名冲突提示（不自动改名——改名需“旧盐解密+新盐重加密”，见方法注释）
+        javax.swing.SwingUtilities.invokeLater(this::warnReservedNameCollision);
     }
 
     private void initializeComponents() {
@@ -37,6 +45,19 @@ public class SchemeManagerDialog extends JDialog {
         listModel = new DefaultListModel<>();
         schemeList = new JList<>(listModel);
         schemeList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        // G1：方案名可重名（内置“默认方案”不在 index.txt 中），列表补类型以便区分
+        schemeList.setCellRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+                                                          boolean isSelected, boolean cellHasFocus) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (value instanceof Scheme) {
+                    Scheme scheme = (Scheme) value;
+                    setText(scheme.getName() + "（" + (scheme.getType() == null ? "" : scheme.getType()) + "）");
+                }
+                return this;
+            }
+        });
     }
 
     private void setupLayout() {
@@ -120,6 +141,28 @@ public class SchemeManagerDialog extends JDialog {
             return;
         }
 
+        // G1：方案名合法性——index.txt 以“名,类型”存盘，逗号会破坏解析；
+        // 其余非法字符会破坏数据文件命名清洗（删除路径用原始名拼接，见 README §6.3）
+        if (name.length() > MAX_NAME_LENGTH) {
+            JOptionPane.showMessageDialog(this, "方案名称过长（上限 " + MAX_NAME_LENGTH + " 个字符）！",
+                    "提示", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        for (int i = 0; i < INVALID_NAME_CHARS.length(); i++) {
+            if (name.indexOf(INVALID_NAME_CHARS.charAt(i)) >= 0) {
+                JOptionPane.showMessageDialog(this, "方案名称不能包含以下字符：" + INVALID_NAME_CHARS,
+                        "提示", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+        }
+        // G1：内置“默认方案”名保留——旧实现只比对 index.txt 列表，可创建同名方案，
+        // 导致两个同名项共用同一组数据文件（名单/数字/座位），且删除会误删内置方案数据
+        if (SchemeManager.BUILTIN_DEFAULT_SCHEME_NAME.equals(name)) {
+            JOptionPane.showMessageDialog(this, "“" + name + "”为内置方案保留名称，请换一个名称！",
+                    "提示", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
         for (int i = 0; i < listModel.getSize(); i++) {
             if (listModel.getElementAt(i).getName().equals(name)) {
                 JOptionPane.showMessageDialog(this, "方案名称已存在！", "提示", JOptionPane.WARNING_MESSAGE);
@@ -156,6 +199,30 @@ public class SchemeManagerDialog extends JDialog {
             LogManager.log(selectedScheme.getName(), "删除方案");
             loadSchemes();
             JOptionPane.showMessageDialog(this, "方案删除成功！", "提示", JOptionPane.INFORMATION_MESSAGE);
+        }
+    }
+
+    /**
+     * G1：存量同名冲突提示（只提示、不自动改名）。
+     * <p>
+     * 加密盐含方案名，改名必须“旧盐解密 → 新盐重新加密”后落盘，自动改名有丢数据风险；
+     * 因此这里只做可见提示与后果说明，处置交给用户。
+     * </p>
+     */
+    private void warnReservedNameCollision() {
+        for (Scheme scheme : schemeManager.getAllSchemes()) {
+            if (SchemeManager.BUILTIN_DEFAULT_SCHEME_NAME.equals(scheme.getName())) {
+                LogManager.log("检测到与内置方案同名的自建方案: " + scheme.getName()
+                        + "（类型=" + scheme.getType() + "）", "SCHEME_NAME_COLLISION");
+                JOptionPane.showMessageDialog(this,
+                        "检测到自建方案“" + scheme.getName() + "”与内置“"
+                                + SchemeManager.BUILTIN_DEFAULT_SCHEME_NAME + "”同名：\n"
+                                + "• 两者共用同一组数据文件（名单 / 数字范围 / 座位），设置会互相影响；\n"
+                                + "• 删除该方案会一并删除内置方案的数据文件（名单可由备份自愈，数字/座位不会）；\n"
+                                + "• 本次不自动改名（改名需重新加密，风险高），建议手工另建后删除旧方案。",
+                        "提示", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
         }
     }
 }

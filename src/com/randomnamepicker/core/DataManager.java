@@ -191,6 +191,9 @@ public class DataManager {
                 if (fileData == null) {
                     return null;
                 }
+                // E4：自愈后必须重新解密“恢复出来的内容”——旧实现仍返回损坏主文件解出的旧值，
+                // 与名单路径 loadNamesFile 的语义不一致（三份文件已被同步为 master，却返回旧内容）
+                decrypted = EncryptionUtil.decryptData(fileData.encryptedContent, getSalt(schemeName));
             }
             
             return decrypted;
@@ -236,6 +239,8 @@ public class DataManager {
                 if (fileData == null) {
                     return null;
                 }
+                // E4：自愈后重新解密恢复内容（同 loadNumberRange，见名单路径语义）
+                decrypted = EncryptionUtil.decryptData(fileData.encryptedContent, getSalt(schemeName));
             }
             
             return decrypted;
